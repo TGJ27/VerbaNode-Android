@@ -1,43 +1,45 @@
-# VerbaNode Android v0.3.1
+# VerbaNode Android v0.3.2 — Media & Queue UX
 
-Maintenance and mobile UX patch for VerbaNode Core v0.9.0.
+This release is designed for **VerbaNode Core v0.9.1**.
 
-## Fixes
+## Added
 
-- Fixed **Start Conversation** to call Core's real `/api/conversation/start` endpoint instead of creating a new chat record.
-- Fixed **Stop Conversation** to cancel Android PTT, cancel browser/mobile PTT on Core, stop continuous conversation mode, and refresh the authoritative mode state.
-- Push-to-Talk now works independently of continuous conversation mode, matching the web dashboard behavior.
-- Text chat no longer requires continuous conversation mode to be enabled.
-- Conversation controls now show clearer enabled/disabled and mode state.
-- Replaced the bottom navigation **Agents** shortcut with **Scripts**. Agent management remains available from Home and More.
-- Scripts & Queue now uses the main dashboard shell and bottom navigation.
-- Added explicit plugin **Refresh** and clarified **Reload external** behavior.
-- Added **Windows Default** microphone and speaker choices to Host Audio.
-- Audio device rows now show host API, Windows-default, and recommended-device flags.
-- Rebuilt the Home **System status** layout as a responsive 2x2 status grid and normalized internal engine mode strings to user-facing states.
-- Added global Android safe-drawing insets so the phone status bar and navigation/gesture bar do not cover VerbaNode UI.
-- Improved the connection landing page, one-shot scan presentation, discovered-server cards, saved-server cards, and manual address field.
-- Bumped Android app version to **v0.3.1**.
+- New **Audio Library** screen under More / Management.
+- Upload MP3/WAV files from Android to the VerbaNode host.
+- Play, stop, rename, and delete host audio files.
+- Agent editor now uses Core-provided dropdown choices for LLM model, language, TTS mode, and STT model.
+- Script editor now uses Core-provided dropdown choices for language and TTS mode.
+- Script queue now exposes a persistent **Loop** switch.
+- Queue items now support configurable pause-after-playback seconds.
+- Queue items can be long-pressed and dragged up/down to reorder.
+- Chat now gives more screen area to messages and includes an **Auto-scroll** toggle near the composer.
+
+## Update identity hardening
+
+App version and Core version are not used as device identity. Existing trusted-device credentials are preserved when the same Core `instance_id` is rediscovered after an update. If the Core certificate key genuinely changes, Android asks to trust the new TLS identity while retaining the existing paired credential for that same Core instance.
+
+With Core v0.9.1, source-mode Core identity/state also persists outside replaceable source folders, preventing normal Core updates from appearing as a new server.
 
 ## Compatibility
 
-- VerbaNode Core: **v0.9.0**
-- REST API: **v1**
-- WebSocket protocol: **v1**
-- LAN-only; no cloud relay or Internet remote control.
+- Recommended Core: v0.9.1
+- REST API: v1
+- WebSocket protocol: v1
+- Pairing remains LAN-only.
+- The single-active-controller policy is unchanged.
+## Release build fixes
 
-## Apply
+- Pins AndroidX Fragment to stable 1.8.9 so Activity Result APIs pass release lint.
+- Uses AutoMirrored Material icons for Chat, Send, and Logout to remove current Compose deprecation warnings.
+- Includes the self-contained signed APK release builder that reuses the permanent local signing identity.
 
-Apply this patch over the VerbaNode Android **v0.3.0** source tree and overwrite matching files.
 
-Then run:
+## Mobile navigation and chat layout revision
 
-```bat
-build_apk.bat
-```
-
-Debug APK output:
-
-```text
-app\build\outputs\apk\debug\app-debug.apk
-```
+- Bottom navigation is now **Home · Chat · Script · Audio · More**.
+- Audio Library is directly accessible from the bottom bar instead of being hidden under More.
+- Home is intentionally simplified to six primary areas: Chat, Agents, Plugins, Scripts, Audio, and Diagnostics.
+- Devices and Backup remain available under More rather than taking Home dashboard space.
+- Chat uses a compact top bar and moves the Auto-scroll switch onto the same row as the Chat title.
+- Chat conversation controls are shorter and remove redundant helper/subtitle text, giving the transcript more vertical space.
+- The empty-chat placeholder is reduced to a compact state so it does not consume the message area.

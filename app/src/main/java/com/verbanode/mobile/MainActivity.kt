@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +29,20 @@ class MainActivity : ComponentActivity() {
                 .onFailure { Toast.makeText(this, it.message ?: "Could not save file", Toast.LENGTH_LONG).show() }
         }
     }
+    private val openAudio = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val filename = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                } ?: uri.lastPathSegment ?: "audio.wav"
+                val mime = contentResolver.getType(uri) ?: if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "audio/wav"
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not open audio file")
+                Triple(bytes, filename, mime)
+            }.onSuccess { (bytes, filename, mime) -> viewModel.uploadAudio(bytes, filename, mime) }
+                .onFailure { viewModel.reportError(it.message ?: "Could not read audio file") }
+        }
+    }
+
     private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not open backup") }
@@ -68,6 +83,10 @@ class MainActivity : ComponentActivity() {
     fun saveDocument(bytes: ByteArray, filename: String, mimeType: String = "application/octet-stream") {
         pendingDocumentBytes = bytes
         createDocument.launch(filename)
+    }
+
+    fun chooseAudioForUpload() {
+        openAudio.launch(arrayOf("audio/mpeg", "audio/wav", "audio/x-wav"))
     }
 
     fun chooseBackupForRestore() {

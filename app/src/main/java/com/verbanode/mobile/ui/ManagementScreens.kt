@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +34,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -40,7 +43,25 @@ import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.MainActivity
+import org.json.JSONArray
 import org.json.JSONObject
+
+private fun choiceArray(array: JSONArray?): List<Pair<String, String>> = buildList {
+    if (array == null) return@buildList
+    for (index in 0 until array.length()) {
+        when (val value = array.opt(index)) {
+            is JSONObject -> {
+                val key = value.optString("value")
+                if (key.isNotBlank()) add(key to value.optString("label", key))
+            }
+            is String -> if (value.isNotBlank()) add(value to value)
+        }
+    }
+}
+
+private fun configChoices(config: JSONObject?, key: String): List<Pair<String, String>> = choiceArray(config?.optJSONArray(key))
+private fun sttChoices(config: JSONObject?, language: String): List<Pair<String, String>> =
+    choiceArray(config?.optJSONObject("stt_models")?.optJSONArray(language))
 
 @Composable
 internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
@@ -102,7 +123,7 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
         }
     }
     if (creating || editing != null) {
-        AgentEditorDialog(existing = editing, onDismiss = { creating = false; editing = null }) { id, payload ->
+        AgentEditorDialog(existing = editing, configurationOptions = state.configurationOptions, onDismiss = { creating = false; editing = null }) { id, payload ->
             creating = false; editing = null; viewModel.saveAgent(id, payload)
         }
     }
@@ -117,7 +138,7 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
 }
 
 @Composable
-private fun AgentEditorDialog(existing: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
+private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
     var name by remember(existing) { mutableStateOf(existing?.optString("name", "Ropi") ?: "Ropi") }
     var avatar by remember(existing) { mutableStateOf(existing?.optString("avatar", "RP") ?: "RP") }
     var color by remember(existing) { mutableStateOf(existing?.optString("color", "#3578f6") ?: "#3578f6") }
@@ -148,15 +169,19 @@ private fun AgentEditorDialog(existing: JSONObject?, onDismiss: () -> Unit, onSa
                 item { OutlinedTextField(role, { role = it }, label = { Text("Role") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
                 item { OutlinedTextField(systemPrompt, { systemPrompt = it }, label = { Text("System prompt") }, minLines = 3, modifier = Modifier.fillMaxWidth()) }
                 item { OutlinedTextField(greeting, { greeting = it }, label = { Text("Greeting") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
-                item { OutlinedTextField(model, { model = it }, label = { Text("LLM model") }, modifier = Modifier.fillMaxWidth()) }
+                item { ChoiceField("LLM model", model, configChoices(configurationOptions, "llm_models"), Modifier.fillMaxWidth()) { model = it } }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(language, { language = it.take(2).lowercase() }, label = { Text("Language en/id") }, modifier = Modifier.weight(1f))
-                        OutlinedTextField(ttsMode, { ttsMode = it }, label = { Text("TTS mode") }, modifier = Modifier.weight(1f))
+                        ChoiceField("Language", language, configChoices(configurationOptions, "languages"), Modifier.weight(1f)) { selected ->
+                            language = selected
+                            val allowed = sttChoices(configurationOptions, selected)
+                            if (allowed.isNotEmpty() && allowed.none { it.first == sttModel }) sttModel = allowed.first().first
+                        }
+                        ChoiceField("TTS mode", ttsMode, configChoices(configurationOptions, "tts_modes"), Modifier.weight(1f)) { ttsMode = it }
                     }
                 }
                 item { OutlinedTextField(edgeVoice, { edgeVoice = it }, label = { Text("Edge voice") }, modifier = Modifier.fillMaxWidth()) }
-                item { OutlinedTextField(sttModel, { sttModel = it }, label = { Text("STT model") }, modifier = Modifier.fillMaxWidth()) }
+                item { ChoiceField("STT model", sttModel, sttChoices(configurationOptions, language), Modifier.fillMaxWidth()) { sttModel = it } }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(temperature, { temperature = it }, label = { Text("Temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
@@ -255,15 +280,17 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
                         OutlinedButton(onClick = { viewModel.queueAction("pause") }, modifier = Modifier.weight(1f)) { Text("Pause") }
                         OutlinedButton(onClick = { viewModel.queueAction("stop") }, modifier = Modifier.weight(1f)) { Text("Stop") }
                     }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Loop queue", fontWeight = FontWeight.SemiBold)
+                            Text("Repeat from the top until stopped.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = state.queueLoop, onCheckedChange = viewModel::setQueueLoop)
+                    }
                     OutlinedButton(onClick = { viewModel.queueAction("clear") }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Clear queue") }
                     state.queueItems.forEach { item ->
                         HorizontalDivider(Modifier.padding(vertical = 7.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(item.optString("title", item.optString("script_title", "Queued script")), modifier = Modifier.weight(1f))
-                            TextButton(onClick = { viewModel.moveQueueItem(item.optInt("id"), -1) }) { Text("↑") }
-                            TextButton(onClick = { viewModel.moveQueueItem(item.optInt("id"), 1) }) { Text("↓") }
-                            TextButton(onClick = { viewModel.removeQueueItem(item.optInt("id")) }) { Text("Remove") }
-                        }
+                        QueueItemRow(viewModel, item)
                     }
                 }
             }
@@ -291,12 +318,57 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
         }
     }
     if (creating || editing != null) {
-        ScriptDialog(editing, { creating = false; editing = null }) { id, payload -> creating = false; editing = null; viewModel.saveScript(id, payload) }
+        ScriptDialog(editing, state.configurationOptions, { creating = false; editing = null }) { id, payload -> creating = false; editing = null; viewModel.saveScript(id, payload) }
     }
 }
 
 @Composable
-private fun ScriptDialog(existing: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
+private fun QueueItemRow(viewModel: AppViewModel, item: JSONObject) {
+    val id = item.optInt("id")
+    var dragOffset by remember(id) { mutableStateOf(0f) }
+    var pauseText by remember(id, item.optDouble("pause_after_seconds", 0.0)) {
+        mutableStateOf(item.optDouble("pause_after_seconds", 0.0).toString().removeSuffix(".0"))
+    }
+    val threshold = with(LocalDensity.current) { 46.dp.toPx() }
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "☰",
+                modifier = Modifier.padding(end = 10.dp).pointerInput(id) {
+                    detectDragGesturesAfterLongPress(
+                        onDragEnd = { dragOffset = 0f },
+                        onDragCancel = { dragOffset = 0f },
+                    ) { change, amount ->
+                        change.consume()
+                        dragOffset += amount.y
+                        if (dragOffset >= threshold) { dragOffset = 0f; viewModel.moveQueueItem(id, 1) }
+                        else if (dragOffset <= -threshold) { dragOffset = 0f; viewModel.moveQueueItem(id, -1) }
+                    }
+                },
+                fontWeight = FontWeight.Bold,
+            )
+            Column(Modifier.weight(1f)) {
+                Text(item.optString("title", item.optString("script_title", "Queued script")), fontWeight = FontWeight.SemiBold)
+                Text("Long-press and drag ☰ to reorder", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = { viewModel.removeQueueItem(id) }) { Text("Remove") }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            OutlinedTextField(
+                pauseText,
+                { pauseText = it.filter { ch -> ch.isDigit() || ch == '.' }.take(7) },
+                label = { Text("Pause after (sec)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            OutlinedButton(onClick = { viewModel.setQueuePause(id, pauseText.toDoubleOrNull() ?: 0.0) }) { Text("Set") }
+        }
+    }
+}
+
+@Composable
+private fun ScriptDialog(existing: JSONObject?, configurationOptions: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
     var title by remember(existing) { mutableStateOf(existing?.optString("title") ?: "") }
     var text by remember(existing) { mutableStateOf(existing?.optString("text") ?: "") }
     var enabled by remember(existing) { mutableStateOf(existing?.optBoolean("enabled", true) ?: true) }
@@ -314,8 +386,8 @@ private fun ScriptDialog(existing: JSONObject?, onDismiss: () -> Unit, onSave: (
             item { OutlinedTextField(text, { text = it }, label = { Text("Script text") }, minLines = 5, modifier = Modifier.fillMaxWidth()) }
             item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(enabled, { enabled = it }); Text("Enabled") } }
             item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(language, { language = it.take(2).lowercase() }, label = { Text("Language") }, modifier = Modifier.weight(1f))
-                OutlinedTextField(ttsMode, { ttsMode = it }, label = { Text("TTS mode") }, modifier = Modifier.weight(1f))
+                ChoiceField("Language", language, configChoices(configurationOptions, "languages"), Modifier.weight(1f)) { language = it }
+                ChoiceField("TTS mode", ttsMode, configChoices(configurationOptions, "tts_modes"), Modifier.weight(1f)) { ttsMode = it }
             } }
             item { OutlinedTextField(edgeVoice, { edgeVoice = it }, label = { Text("Edge voice") }, modifier = Modifier.fillMaxWidth()) }
             item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

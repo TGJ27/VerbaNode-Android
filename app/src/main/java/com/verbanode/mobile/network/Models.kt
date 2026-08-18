@@ -16,6 +16,9 @@ data class ClientInfo(
     val instanceDiscoveryEnabled: Boolean,
     val mobilePairing: Boolean,
     val trustedDevices: Boolean,
+    val audioLibrary: Boolean,
+    val configurationOptions: Boolean,
+    val scriptQueueLoop: Boolean,
 )
 
 data class AuthSession(
@@ -96,6 +99,9 @@ fun parseClientInfo(json: JSONObject): ClientInfo {
         instanceDiscoveryEnabled = discovery.optBoolean("enabled", false),
         mobilePairing = features.optBoolean("mobile_pairing", false),
         trustedDevices = features.optBoolean("trusted_devices", false),
+        audioLibrary = features.optBoolean("audio_library", false),
+        configurationOptions = features.optBoolean("configuration_options", false),
+        scriptQueueLoop = features.optBoolean("script_queue_loop", false),
     )
 }
 
@@ -104,8 +110,8 @@ fun ClientInfo.requireAndroidCompatibility() {
     require(apiVersion == 1 && websocketVersion == 1) {
         "Unsupported VerbaNode protocol (API $apiVersion, WS $websocketVersion)"
     }
-    require(mobilePairing && trustedDevices) {
-        "VerbaNode Core v0.9.0 or newer is required for this Android controller"
+    require(mobilePairing && trustedDevices && audioLibrary && configurationOptions && scriptQueueLoop) {
+        "VerbaNode Core v0.9.1 or newer is required for this Android controller"
     }
 }
 

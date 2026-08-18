@@ -2,8 +2,8 @@
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.3.1  
-**Required Core:** VerbaNode v0.9.0+  
+**Current version:** v0.3.2  
+**Required Core:** VerbaNode v0.9.1+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
@@ -91,3 +91,12 @@ VerbaNode Android
 ```
 
 Core remains authoritative for AI, audio, plugins, database, device credentials and all management state. The Android app is a client; it does not duplicate backend logic.
+
+### v0.3.2 media and queue UX
+
+- Host Audio Library management (MP3/WAV upload, play, stop, rename, delete)
+- Core-provided dropdowns for agent/script model and language configuration
+- Stable paired-device identity across Android/Core version updates
+- Larger chat area with Auto-scroll toggle
+- Script queue loop, per-item pause, and drag reorder
+

@@ -10,6 +10,7 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
 
 class VerbaNodeApi(
     val baseUrl: String,
@@ -17,6 +18,7 @@ class VerbaNodeApi(
     val client: OkHttpClient = TlsTrust.pinnedClient(spkiSha256),
 ) {
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
+    private fun pathSegment(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
 
     private fun buildRequest(
         path: String,
@@ -280,6 +282,30 @@ class VerbaNodeApi(
             .addFormDataPart("file", filename, bytes.toRequestBody("application/zip".toMediaType())).build()
         return request("/api/restore", "POST", sessionToken, body = multipart)
     }
+
+
+    fun configurationOptions(sessionToken: String): JSONObject = request("/api/configuration-options", sessionToken = sessionToken)
+
+    fun audioLibrary(sessionToken: String): JSONObject = request("/api/audio-library", sessionToken = sessionToken)
+    fun uploadAudio(sessionToken: String, bytes: ByteArray, filename: String, mimeType: String): JSONObject {
+        val media = (mimeType.ifBlank { if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "audio/wav" }).toMediaType()
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", filename, bytes.toRequestBody(media)).build()
+        return request("/api/audio-library/upload", "POST", sessionToken, body = multipart)
+    }
+    fun playAudio(sessionToken: String, name: String): JSONObject = request("/api/audio-library/${pathSegment(name)}/play", "POST", sessionToken)
+    fun stopAudio(sessionToken: String): JSONObject = request("/api/audio-library/stop", "POST", sessionToken)
+    fun renameAudio(sessionToken: String, name: String, newName: String): JSONObject = request(
+        "/api/audio-library/${pathSegment(name)}", "PATCH", sessionToken, JSONObject().put("name", newName),
+    )
+    fun deleteAudio(sessionToken: String, name: String) { request("/api/audio-library/${pathSegment(name)}", "DELETE", sessionToken) }
+
+    fun setQueueLoop(sessionToken: String, loop: Boolean): JSONObject = request(
+        "/api/queue/settings", "PUT", sessionToken, JSONObject().put("loop", loop),
+    )
+    fun setQueuePause(sessionToken: String, queueId: Int, seconds: Double): JSONObject = request(
+        "/api/queue/$queueId", "PATCH", sessionToken, JSONObject().put("pause_after_seconds", seconds),
+    )
 
     fun wsTicket(sessionToken: String): String = request("/api/auth/ws-ticket", method = "POST", sessionToken = sessionToken).getString("ticket")
 }

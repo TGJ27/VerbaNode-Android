@@ -38,7 +38,7 @@ import java.util.UUID
 
 enum class AppScreen {
     SERVERS, TRUST, LOGIN,
-    HOME, CHAT, AGENTS, MORE, INFORMATION, SCRIPTS, PLUGINS, SETTINGS,
+    HOME, CHAT, AGENTS, MORE, INFORMATION, SCRIPTS, AUDIO, PLUGINS, SETTINGS,
     DEVICES, DIAGNOSTICS, DATA, STATUS
 }
 
@@ -66,6 +66,11 @@ data class MobileUiState(
     val scriptItems: List<JSONObject> = emptyList(),
     val queueItems: List<JSONObject> = emptyList(),
     val queueState: String = "paused",
+    val queueLoop: Boolean = false,
+    val configurationOptions: JSONObject? = null,
+    val audioLibraryItems: List<JSONObject> = emptyList(),
+    val audioLibraryPlaying: String? = null,
+    val chatAutoScroll: Boolean = true,
     val pluginItems: List<JSONObject> = emptyList(),
     val pluginSummary: JSONObject? = null,
     val modelItems: List<JSONObject> = emptyList(),
@@ -181,7 +186,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (existing != null) {
                 val updated = existing.copy(baseUrl = server.baseUrl)
                 store.upsert(updated)
-                connectProfileInternal(updated)
+                val advertisedSpki = server.spkiSha256?.lowercase()
+                if (!advertisedSpki.isNullOrBlank() && advertisedSpki != updated.spkiSha256.lowercase()) {
+                    // Same persistent Core instance, refreshed TLS identity. Re-trust the key but
+                    // preserve the stored trusted-device credential; an app/server version change
+                    // must never create a new device profile.
+                    probeInternal(server.baseUrl, advertisedSpki, updated)
+                } else {
+                    connectProfileInternal(updated)
+                }
             } else {
                 probeInternal(server.baseUrl, server.spkiSha256)
             }
@@ -190,21 +203,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun probeServer(address: String) = runBusy { probeInternal(address) }
 
-    private suspend fun probeInternal(address: String, expectedSpkiSha256: String? = null) {
+    private suspend fun probeInternal(
+        address: String,
+        expectedSpkiSha256: String? = null,
+        existingProfile: ServerProfile? = null,
+    ) {
         val result = withContext(Dispatchers.IO) { TlsTrust.probe(address, expectedSpkiSha256) }
         _ui.update {
             it.copy(
                 screen = AppScreen.TRUST,
                 trustCandidate = result,
                 clientInfo = result.clientInfo,
-                currentProfile = null,
+                currentProfile = existingProfile,
             )
         }
     }
 
     fun confirmTrust() = runBusy {
         val candidate = _ui.value.trustCandidate ?: error("No server is waiting for trust confirmation")
-        val existing = store.profiles().firstOrNull {
+        val remembered = _ui.value.currentProfile
+        val existing = remembered?.takeIf {
+            (!candidate.clientInfo.instanceId.isNullOrBlank() && it.instanceId == candidate.clientInfo.instanceId) ||
+                it.spkiSha256 == candidate.certificateSpkiSha256
+        } ?: store.profiles().firstOrNull {
             (!candidate.clientInfo.instanceId.isNullOrBlank() && it.instanceId == candidate.clientInfo.instanceId) ||
                 it.spkiSha256 == candidate.certificateSpkiSha256
         }
@@ -377,8 +398,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         "message_added", "assistant_complete", "conversation_changed", "conversation_cleared" -> refreshConversationInternal()
                         "agents_changed", "agent_changed" -> { loadBootstrapInternal(); if (_ui.value.screen == AppScreen.AGENTS) loadAgentsManagementInternal() }
                         "plugins_changed" -> if (_ui.value.screen == AppScreen.PLUGINS) loadPluginsInternal()
-                        "scripts_changed", "queue_changed" -> if (_ui.value.screen == AppScreen.SCRIPTS) loadScriptsInternal()
-                        "models_changed", "model_pull" -> if (_ui.value.screen == AppScreen.SETTINGS) loadSettingsInternal()
+                        "scripts_changed", "queue_changed", "queue_state" -> if (_ui.value.screen == AppScreen.SCRIPTS) loadScriptsInternal()
+                        "audio_library_changed", "audio_library_state" -> if (_ui.value.screen == AppScreen.AUDIO) loadAudioLibraryInternal()
+                        "models_changed", "model_pull" -> {
+                            if (_ui.value.screen == AppScreen.SETTINGS) loadSettingsInternal()
+                            if (_ui.value.screen == AppScreen.AGENTS || _ui.value.screen == AppScreen.SCRIPTS) loadConfigurationOptionsInternal()
+                        }
                         "reload_required" -> _ui.update { it.copy(notice = "VerbaNode restored data. Restart Core before continuing management changes.") }
                         "mode_changed" -> data?.optString("mode")?.let { mode ->
                             _ui.update {
@@ -641,13 +666,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { runCatching { refreshConversationInternal() } }
     }
 
+    private suspend fun loadConfigurationOptionsInternal() {
+        val (localApi, token) = requireApiSession()
+        val options = withContext(Dispatchers.IO) { localApi.configurationOptions(token) }
+        _ui.update { it.copy(configurationOptions = options) }
+    }
+
     private suspend fun loadAgentsManagementInternal() {
         val (localApi, token) = requireApiSession()
         val values = withContext(Dispatchers.IO) { localApi.agentsRaw(token).objectList() }
         _ui.update { it.copy(rawAgents = values) }
     }
 
-    fun openAgents() = runBusy { loadAgentsManagementInternal(); _ui.update { it.copy(screen = AppScreen.AGENTS) } }
+    fun openAgents() = runBusy { loadAgentsManagementInternal(); loadConfigurationOptionsInternal(); _ui.update { it.copy(screen = AppScreen.AGENTS) } }
 
     fun saveAgent(agentId: Int?, payload: JSONObject) = runBusy {
         val (localApi, token) = requireApiSession()
@@ -705,10 +736,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val scripts = withContext(Dispatchers.IO) { localApi.scripts(token).objectList() }
         val queue = withContext(Dispatchers.IO) { localApi.queue(token) }
         val queueItems = (queue.optJSONArray("items") ?: JSONArray()).objectList()
-        _ui.update { it.copy(scriptItems = scripts, queueItems = queueItems, queueState = queue.optString("state", "paused")) }
+        _ui.update {
+            it.copy(
+                scriptItems = scripts,
+                queueItems = queueItems,
+                queueState = queue.optString("state", "paused"),
+                queueLoop = queue.optBoolean("loop", false),
+            )
+        }
     }
 
-    fun openScripts() = runBusy { loadScriptsInternal(); _ui.update { it.copy(screen = AppScreen.SCRIPTS) } }
+    fun openScripts() = runBusy { loadScriptsInternal(); loadConfigurationOptionsInternal(); _ui.update { it.copy(screen = AppScreen.SCRIPTS) } }
 
     fun saveScript(id: Int?, payload: JSONObject) = runBusy {
         val (localApi, token) = requireApiSession()
@@ -723,15 +761,47 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun runScriptNow(id: Int) = runBusy { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.runScriptNow(t,id)}; _ui.update{it.copy(notice="Script started.")} }
     fun queueAction(action: String) = runBusy { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.queueAction(t,action)}; loadScriptsInternal() }
     fun removeQueueItem(id: Int) = runBusy { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.removeQueueItem(t,id)}; loadScriptsInternal() }
-    fun moveQueueItem(id: Int, delta: Int) = runBusy {
-        val current = _ui.value.queueItems.map { it.optInt("id") }.toMutableList()
-        val from = current.indexOf(id)
-        val to = (from + delta).coerceIn(0, current.lastIndex)
-        if (from >= 0 && to != from) {
-            val item = current.removeAt(from); current.add(to, item)
-            val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.reorderQueue(t,current)}; loadScriptsInternal()
+    fun setQueueLoop(enabled: Boolean) = runBusy {
+        val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.setQueueLoop(t,enabled)}; loadScriptsInternal()
+    }
+    fun setQueuePause(id: Int, seconds: Double) = runBusy {
+        val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.setQueuePause(t,id,seconds.coerceIn(0.0,3600.0))}; loadScriptsInternal()
+    }
+    fun moveQueueItem(id: Int, delta: Int) {
+        val items = _ui.value.queueItems.toMutableList()
+        val from = items.indexOfFirst { it.optInt("id") == id }
+        if (from < 0 || items.isEmpty()) return
+        val to = (from + delta).coerceIn(0, items.lastIndex)
+        if (to == from) return
+        val moved = items.removeAt(from); items.add(to, moved)
+        _ui.update { it.copy(queueItems = items) }
+        viewModelScope.launch {
+            try {
+                val (a,t)=requireApiSession()
+                withContext(Dispatchers.IO){a.reorderQueue(t,items.map { it.optInt("id") })}
+            } catch (error: Exception) {
+                _ui.update { it.copy(error = friendlyError(error)) }
+                runCatching { loadScriptsInternal() }
+            }
         }
     }
+
+    private suspend fun loadAudioLibraryInternal() {
+        val (localApi, token) = requireApiSession()
+        val payload = withContext(Dispatchers.IO) { localApi.audioLibrary(token) }
+        val items = (payload.optJSONArray("items") ?: JSONArray()).objectList()
+        _ui.update { it.copy(audioLibraryItems = items, audioLibraryPlaying = payload.optString("playing").ifBlank { null }) }
+    }
+
+    fun openAudio() = runBusy { loadAudioLibraryInternal(); _ui.update { it.copy(screen = AppScreen.AUDIO) } }
+    fun uploadAudio(bytes: ByteArray, filename: String, mimeType: String) = runBusy {
+        val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.uploadAudio(t,bytes,filename,mimeType)}; loadAudioLibraryInternal(); _ui.update{it.copy(notice="Audio uploaded.")}
+    }
+    fun playAudio(name: String) = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.playAudio(t,name)}; loadAudioLibraryInternal() }
+    fun stopAudio() = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.stopAudio(t)}; loadAudioLibraryInternal() }
+    fun renameAudio(name: String, newName: String) = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.renameAudio(t,name,newName)}; loadAudioLibraryInternal() }
+    fun deleteAudio(name: String) = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.deleteAudio(t,name)}; loadAudioLibraryInternal() }
+    fun setChatAutoScroll(enabled: Boolean) = _ui.update { it.copy(chatAutoScroll = enabled) }
 
     private suspend fun loadPluginsInternal() {
         val (localApi, token) = requireApiSession()
