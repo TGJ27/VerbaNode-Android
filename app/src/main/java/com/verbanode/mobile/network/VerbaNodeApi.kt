@@ -223,6 +223,9 @@ class VerbaNodeApi(
     fun updateInformation(sessionToken: String, id: Int, payload: JSONObject): JSONObject = request("/api/information/$id", "PUT", sessionToken, payload)
     fun deleteInformation(sessionToken: String, id: Int) { request("/api/information/$id", "DELETE", sessionToken) }
 
+    fun scriptDefaults(sessionToken: String): JSONObject = request("/api/scripts/defaults", sessionToken = sessionToken)
+    fun saveScriptDefaults(sessionToken: String, payload: JSONObject): JSONObject = request("/api/scripts/defaults", "PUT", sessionToken, payload)
+
     fun scripts(sessionToken: String): JSONArray = requestArray("/api/scripts", sessionToken = sessionToken)
     fun createScript(sessionToken: String, payload: JSONObject): JSONObject = request("/api/scripts", "POST", sessionToken, payload)
     fun updateScript(sessionToken: String, id: Int, payload: JSONObject): JSONObject = request("/api/scripts/$id", "PUT", sessionToken, payload)
@@ -239,6 +242,17 @@ class VerbaNodeApi(
     fun reorderQueue(sessionToken: String, orderedIds: List<Int>) {
         val array = JSONArray(); orderedIds.forEach { array.put(it) }
         request("/api/queue/reorder", "PUT", sessionToken, JSONObject().put("ordered_ids", array))
+    }
+
+    fun typeToTalk(sessionToken: String): JSONObject = request("/api/type-to-talk", sessionToken = sessionToken)
+    fun addTypeToTalk(sessionToken: String, payload: JSONObject): JSONObject = request("/api/type-to-talk", "POST", sessionToken, payload)
+    fun playTypeToTalk(sessionToken: String) { request("/api/type-to-talk/play", "POST", sessionToken) }
+    fun stopTypeToTalk(sessionToken: String) { request("/api/type-to-talk/stop", "POST", sessionToken) }
+    fun clearTypeToTalk(sessionToken: String) { request("/api/type-to-talk", "DELETE", sessionToken) }
+    fun removeTypeToTalk(sessionToken: String, id: Int) { request("/api/type-to-talk/$id", "DELETE", sessionToken) }
+    fun reorderTypeToTalk(sessionToken: String, orderedIds: List<Int>) {
+        val array = JSONArray(); orderedIds.forEach { array.put(it) }
+        request("/api/type-to-talk/reorder", "PUT", sessionToken, JSONObject().put("ordered_ids", array))
     }
 
     fun plugins(sessionToken: String): JSONObject = request("/api/plugins", sessionToken = sessionToken)
@@ -288,7 +302,13 @@ class VerbaNodeApi(
 
     fun audioLibrary(sessionToken: String): JSONObject = request("/api/audio-library", sessionToken = sessionToken)
     fun uploadAudio(sessionToken: String, bytes: ByteArray, filename: String, mimeType: String): JSONObject {
-        val media = (mimeType.ifBlank { if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "audio/wav" }).toMediaType()
+        val lower = filename.lowercase()
+        val fallbackMime = when {
+            lower.endsWith(".mp3") || lower.endsWith(".mpeg") || lower.endsWith(".mpg") || lower.endsWith(".mpga") -> "audio/mpeg"
+            lower.endsWith(".mp2") -> "audio/mp2"
+            else -> "audio/wav"
+        }
+        val media = mimeType.ifBlank { fallbackMime }.toMediaType()
         val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("file", filename, bytes.toRequestBody(media)).build()
         return request("/api/audio-library/upload", "POST", sessionToken, body = multipart)

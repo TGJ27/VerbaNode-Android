@@ -211,7 +211,7 @@ internal fun DashboardScreen(viewModel: AppViewModel) {
             }
             item {
                 FeatureRow(
-                    Feature(Icons.Outlined.GraphicEq, "Audio", "MP3 / WAV library", viewModel::openAudio),
+                    Feature(Icons.Outlined.GraphicEq, "Audio", "Multi-format audio library", viewModel::openAudio),
                     Feature(Icons.Outlined.MonitorHeart, "Diagnostics", "System health", viewModel::openDiagnostics),
                 )
             }
@@ -425,8 +425,8 @@ internal fun MoreScreen(viewModel: AppViewModel) {
             item { Feedback(viewModel) }
             item { MoreRow(Feature(Icons.Outlined.Extension, "Plugins", "Extend capabilities", viewModel::openPlugins), Feature(Icons.Outlined.Devices, "Devices", "Trusted controllers", viewModel::openDevices)) }
             item { MoreRow(Feature(Icons.Outlined.MonitorHeart, "Diagnostics", "System health", viewModel::openDiagnostics), Feature(Icons.Outlined.CloudUpload, "Backup & Restore", "Protect your data", viewModel::openData)) }
-            item { MoreRow(Feature(Icons.Outlined.Settings, "Settings", "Conversation & runtime", viewModel::openSettings), Feature(Icons.Outlined.Tune, "AI & Models", "Models and engines", viewModel::openSettings)) }
-            item { MoreRow(Feature(Icons.Outlined.GraphicEq, "Audio", "MP3 / WAV library", viewModel::openAudio), Feature(Icons.Outlined.Security, "Security", "Trusted devices", viewModel::openDevices)) }
+            item { MoreRow(Feature(Icons.Outlined.Mic, "Type to Talk", "Queue direct TTS speech", viewModel::openTypeToTalk), Feature(Icons.Outlined.Settings, "Settings", "Conversation & runtime", viewModel::openSettings)) }
+            item { MoreRow(Feature(Icons.Outlined.GraphicEq, "Audio", "Multi-format audio library", viewModel::openAudio), Feature(Icons.Outlined.Security, "Security", "Trusted devices", viewModel::openDevices)) }
             item { MoreRow(Feature(Icons.Outlined.Person, "Agents", "Manage AI agents", viewModel::openAgents), Feature(Icons.Outlined.Info, "Information", "Agent knowledge", viewModel::openInformation)) }
             item { MoreRow(Feature(Icons.Outlined.Description, "Scripts & Queue", "TTS scripts", viewModel::openScripts), Feature(Icons.Outlined.Storage, "About / Status", "Core and protocol info", viewModel::openStatus)) }
             item { FeatureCard(Feature(Icons.AutoMirrored.Outlined.Logout, "Switch Server", "Return to connections", viewModel::goServers), Modifier.fillMaxWidth()) }

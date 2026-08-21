@@ -38,7 +38,7 @@ import java.util.UUID
 
 enum class AppScreen {
     SERVERS, TRUST, LOGIN,
-    HOME, CHAT, AGENTS, MORE, INFORMATION, SCRIPTS, AUDIO, PLUGINS, SETTINGS,
+    HOME, CHAT, AGENTS, MORE, INFORMATION, SCRIPTS, AUDIO, TYPE_TO_TALK, PLUGINS, SETTINGS,
     DEVICES, DIAGNOSTICS, DATA, STATUS
 }
 
@@ -68,6 +68,10 @@ data class MobileUiState(
     val queueState: String = "paused",
     val queueLoop: Boolean = false,
     val configurationOptions: JSONObject? = null,
+    val scriptDefaults: JSONObject? = null,
+    val typeToTalkItems: List<JSONObject> = emptyList(),
+    val typeToTalkState: String = "idle",
+    val typeToTalkDefaults: JSONObject? = null,
     val audioLibraryItems: List<JSONObject> = emptyList(),
     val audioLibraryPlaying: String? = null,
     val chatAutoScroll: Boolean = true,
@@ -398,7 +402,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         "message_added", "assistant_complete", "conversation_changed", "conversation_cleared" -> refreshConversationInternal()
                         "agents_changed", "agent_changed" -> { loadBootstrapInternal(); if (_ui.value.screen == AppScreen.AGENTS) loadAgentsManagementInternal() }
                         "plugins_changed" -> if (_ui.value.screen == AppScreen.PLUGINS) loadPluginsInternal()
-                        "scripts_changed", "queue_changed", "queue_state" -> if (_ui.value.screen == AppScreen.SCRIPTS) loadScriptsInternal()
+                        "scripts_changed", "queue_changed", "queue_state", "script_defaults_changed" -> if (_ui.value.screen == AppScreen.SCRIPTS) loadScriptsInternal()
+                        "type_to_talk_queue" -> if (_ui.value.screen == AppScreen.TYPE_TO_TALK) loadTypeToTalkInternal()
                         "audio_library_changed", "audio_library_state" -> if (_ui.value.screen == AppScreen.AUDIO) loadAudioLibraryInternal()
                         "models_changed", "model_pull" -> {
                             if (_ui.value.screen == AppScreen.SETTINGS) loadSettingsInternal()
@@ -669,6 +674,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadConfigurationOptionsInternal() {
         val (localApi, token) = requireApiSession()
         val options = withContext(Dispatchers.IO) { localApi.configurationOptions(token) }
+        val liveModels = runCatching { withContext(Dispatchers.IO) { localApi.models(token) } }.getOrElse { JSONArray() }
+        val merged = linkedSetOf<String>()
+        val configured = options.optJSONArray("llm_models") ?: JSONArray()
+        for (index in 0 until configured.length()) {
+            val value = configured.optString(index).trim()
+            if (value.isNotBlank()) merged += value
+        }
+        for (index in 0 until liveModels.length()) {
+            val item = liveModels.optJSONObject(index) ?: continue
+            val value = item.optString("name", item.optString("model")).trim()
+            if (value.isNotBlank()) merged += value
+        }
+        val modelArray = JSONArray(); merged.forEach(modelArray::put)
+        options.put("llm_models", modelArray)
         _ui.update { it.copy(configurationOptions = options) }
     }
 
@@ -734,6 +753,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadScriptsInternal() {
         val (localApi, token) = requireApiSession()
         val scripts = withContext(Dispatchers.IO) { localApi.scripts(token).objectList() }
+        val defaults = withContext(Dispatchers.IO) { localApi.scriptDefaults(token) }
         val queue = withContext(Dispatchers.IO) { localApi.queue(token) }
         val queueItems = (queue.optJSONArray("items") ?: JSONArray()).objectList()
         _ui.update {
@@ -742,11 +762,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 queueItems = queueItems,
                 queueState = queue.optString("state", "paused"),
                 queueLoop = queue.optBoolean("loop", false),
+                scriptDefaults = defaults,
             )
         }
     }
 
     fun openScripts() = runBusy { loadScriptsInternal(); loadConfigurationOptionsInternal(); _ui.update { it.copy(screen = AppScreen.SCRIPTS) } }
+    fun saveScriptDefaults(payload: JSONObject) = runBusy {
+        val (localApi, token) = requireApiSession()
+        val saved = withContext(Dispatchers.IO) { localApi.saveScriptDefaults(token, payload) }
+        _ui.update { it.copy(scriptDefaults = saved, notice = "Script speech defaults saved.") }
+    }
+
 
     fun saveScript(id: Int?, payload: JSONObject) = runBusy {
         val (localApi, token) = requireApiSession()
@@ -783,6 +810,49 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _ui.update { it.copy(error = friendlyError(error)) }
                 runCatching { loadScriptsInternal() }
             }
+        }
+    }
+
+    private suspend fun loadTypeToTalkInternal() {
+        val (localApi, token) = requireApiSession()
+        val payload = withContext(Dispatchers.IO) { localApi.typeToTalk(token) }
+        val items = (payload.optJSONArray("items") ?: JSONArray()).objectList()
+        _ui.update {
+            it.copy(
+                typeToTalkItems = items,
+                typeToTalkState = payload.optString("state", "idle"),
+                typeToTalkDefaults = payload.optJSONObject("defaults") ?: it.typeToTalkDefaults,
+            )
+        }
+    }
+
+    fun openTypeToTalk() = runBusy {
+        loadConfigurationOptionsInternal()
+        loadTypeToTalkInternal()
+        _ui.update { it.copy(screen = AppScreen.TYPE_TO_TALK) }
+    }
+    fun addTypeToTalk(text: String, config: JSONObject) = runBusy {
+        if (text.isBlank()) return@runBusy
+        val payload = JSONObject(config.toString()).put("text", text.trim())
+        val (a,t)=requireApiSession()
+        withContext(Dispatchers.IO){a.addTypeToTalk(t,payload)}
+        loadTypeToTalkInternal()
+    }
+    fun typeToTalkAction(action: String) = runBusy {
+        val (a,t)=requireApiSession(); withContext(Dispatchers.IO){ when(action){ "play" -> a.playTypeToTalk(t); "stop" -> a.stopTypeToTalk(t); "clear" -> a.clearTypeToTalk(t) } }; loadTypeToTalkInternal()
+    }
+    fun removeTypeToTalk(id: Int) = runBusy { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.removeTypeToTalk(t,id)}; loadTypeToTalkInternal() }
+    fun moveTypeToTalk(id: Int, delta: Int) {
+        val items = _ui.value.typeToTalkItems.toMutableList()
+        val from = items.indexOfFirst { it.optInt("id") == id }
+        if (from < 0 || items.isEmpty()) return
+        val to = (from + delta).coerceIn(0, items.lastIndex)
+        if (to == from) return
+        val moved = items.removeAt(from); items.add(to, moved)
+        _ui.update { it.copy(typeToTalkItems = items) }
+        viewModelScope.launch {
+            try { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.reorderTypeToTalk(t,items.map { it.optInt("id") })} }
+            catch (error: Exception) { _ui.update { it.copy(error = friendlyError(error)) }; runCatching { loadTypeToTalkInternal() } }
         }
     }
 

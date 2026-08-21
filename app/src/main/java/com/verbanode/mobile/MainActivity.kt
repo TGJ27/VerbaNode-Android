@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
                 val filename = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                     if (cursor.moveToFirst()) cursor.getString(0) else null
                 } ?: uri.lastPathSegment ?: "audio.wav"
-                val mime = contentResolver.getType(uri) ?: if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "audio/wav"
+                val mime = contentResolver.getType(uri) ?: "audio/*"
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not open audio file")
                 Triple(bytes, filename, mime)
             }.onSuccess { (bytes, filename, mime) -> viewModel.uploadAudio(bytes, filename, mime) }
@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
     }
 
     fun chooseAudioForUpload() {
-        openAudio.launch(arrayOf("audio/mpeg", "audio/wav", "audio/x-wav"))
+        openAudio.launch(arrayOf("audio/*", "audio/mpeg", "audio/mp2", "audio/x-mpeg", "video/mpeg", "application/ogg"))
     }
 
     fun chooseBackupForRestore() {

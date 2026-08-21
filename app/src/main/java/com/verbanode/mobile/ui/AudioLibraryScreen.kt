@@ -42,8 +42,8 @@ internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity)
         ) {
             item { Feedback(viewModel) }
             item {
-                DashboardCard("Host audio", "Upload MP3 or WAV files and play them through the VerbaNode Windows host.") {
-                    Button(onClick = activity::chooseAudioForUpload, modifier = Modifier.fillMaxWidth()) { Text("＋ Upload MP3 / WAV") }
+                DashboardCard("Host audio", "Upload common audio formats and play them through the VerbaNode Windows host.") {
+                    Button(onClick = activity::chooseAudioForUpload, modifier = Modifier.fillMaxWidth()) { Text("＋ Upload audio") }
                     OutlinedButton(onClick = viewModel::stopAudio, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Stop playback") }
                     Text(
                         state.audioLibraryPlaying?.let { "Playing: $it" } ?: "No audio playing",
@@ -90,7 +90,7 @@ internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity)
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { renameTarget = null },
             title = { Text("Rename audio") },
-            text = { OutlinedTextField(value, { value = it }, label = { Text("Filename (.mp3 or .wav)") }, modifier = Modifier.fillMaxWidth()) },
+            text = { OutlinedTextField(value, { value = it }, label = { Text("Filename") }, modifier = Modifier.fillMaxWidth()) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     val old = item.optString("name")

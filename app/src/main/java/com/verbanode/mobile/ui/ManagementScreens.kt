@@ -318,7 +318,9 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
         }
     }
     if (creating || editing != null) {
-        ScriptDialog(editing, state.configurationOptions, { creating = false; editing = null }) { id, payload -> creating = false; editing = null; viewModel.saveScript(id, payload) }
+        ScriptDialog(editing, state.scriptDefaults, state.configurationOptions, { creating = false; editing = null }) { id, payload ->
+            creating = false; editing = null; viewModel.saveScript(id, payload)
+        }
     }
 }
 
@@ -368,42 +370,109 @@ private fun QueueItemRow(viewModel: AppViewModel, item: JSONObject) {
 }
 
 @Composable
-private fun ScriptDialog(existing: JSONObject?, configurationOptions: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
-    var title by remember(existing) { mutableStateOf(existing?.optString("title") ?: "") }
-    var text by remember(existing) { mutableStateOf(existing?.optString("text") ?: "") }
-    var enabled by remember(existing) { mutableStateOf(existing?.optBoolean("enabled", true) ?: true) }
-    var language by remember(existing) { mutableStateOf(existing?.optString("language", "en") ?: "en") }
-    var ttsMode by remember(existing) { mutableStateOf(existing?.optString("tts_mode", "edge") ?: "edge") }
-    var edgeVoice by remember(existing) { mutableStateOf(existing?.optString("edge_voice", "en-US-AriaNeural") ?: "en-US-AriaNeural") }
-    var kokoroId by remember(existing) { mutableStateOf(existing?.optInt("kokoro_voice_id", 0)?.toString() ?: "0") }
-    var rate by remember(existing) { mutableStateOf(existing?.optDouble("tts_rate", 1.0)?.toString() ?: "1.0") }
-    var volume by remember(existing) { mutableStateOf(existing?.optDouble("tts_volume", 1.0)?.toString() ?: "1.0") }
+private fun ScriptDialog(
+    existing: JSONObject?,
+    rememberedDefaults: JSONObject?,
+    configurationOptions: JSONObject?,
+    onDismiss: () -> Unit,
+    onSave: (Int?, JSONObject) -> Unit,
+) {
+    val source = existing ?: rememberedDefaults ?: JSONObject()
+    val stateKey = "${existing?.optInt("id", 0) ?: 0}:${source.toString()}"
+    var title by remember(stateKey) { mutableStateOf(existing?.optString("title") ?: "") }
+    var text by remember(stateKey) { mutableStateOf(existing?.optString("text") ?: "") }
+    var enabled by remember(stateKey) { mutableStateOf(existing?.optBoolean("enabled", true) ?: true) }
+    var language by remember(stateKey) { mutableStateOf(source.optString("language", "en")) }
+    var ttsMode by remember(stateKey) { mutableStateOf(source.optString("tts_mode", "edge")) }
+    var edgeVoice by remember(stateKey) { mutableStateOf(source.optString("edge_voice", "en-US-AriaNeural")) }
+    var kokoroId by remember(stateKey) { mutableStateOf(source.optInt("kokoro_voice_id", 0).toString()) }
+    var rate by remember(stateKey) { mutableStateOf(source.optDouble("tts_rate", 1.0).toString()) }
+    var volume by remember(stateKey) { mutableStateOf(source.optDouble("tts_volume", 1.0).toString()) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Create script" else "Edit script") },
-        text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { OutlinedTextField(title, { title = it.take(120) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(text, { text = it }, label = { Text("Script text") }, minLines = 5, modifier = Modifier.fillMaxWidth()) }
-            item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(enabled, { enabled = it }); Text("Enabled") } }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChoiceField("Language", language, configChoices(configurationOptions, "languages"), Modifier.weight(1f)) { language = it }
-                ChoiceField("TTS mode", ttsMode, configChoices(configurationOptions, "tts_modes"), Modifier.weight(1f)) { ttsMode = it }
-            } }
-            item { OutlinedTextField(edgeVoice, { edgeVoice = it }, label = { Text("Edge voice") }, modifier = Modifier.fillMaxWidth()) }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(kokoroId, { kokoroId = it.filter(Char::isDigit) }, label = { Text("Kokoro ID") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
-                OutlinedTextField(rate, { rate = it }, label = { Text("Rate") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                OutlinedTextField(volume, { volume = it }, label = { Text("Volume") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-            } }
-        } },
-        confirmButton = { TextButton(onClick = {
-            if (title.isBlank() || text.isBlank()) return@TextButton
-            val payload = JSONObject().put("title", title.trim()).put("text", text.trim()).put("enabled", enabled)
-                .put("language", if (language == "id") "id" else "en").put("tts_mode", ttsMode.ifBlank { "edge" })
-                .put("edge_voice", edgeVoice.ifBlank { "en-US-AriaNeural" }).put("kokoro_voice_id", kokoroId.toIntOrNull() ?: 0)
-                .put("tts_rate", rate.toDoubleOrNull() ?: 1.0).put("tts_volume", volume.toDoubleOrNull() ?: 1.0)
-            onSave(existing?.optInt("id")?.takeIf { it > 0 }, payload)
-        }) { Text("Save") } },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { OutlinedTextField(title, { title = it.take(120) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(text, { text = it }, label = { Text("Script text") }, minLines = 5, modifier = Modifier.fillMaxWidth()) }
+                item {
+                    Text(
+                        if (existing == null) "Speech settings start from the last script you saved. If none exists yet, VerbaNode uses the normal defaults."
+                        else "This script keeps its own saved speech settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ChoiceField("Language", language, configChoices(configurationOptions, "languages"), Modifier.weight(1f)) { selected ->
+                            language = selected
+                            if (language == "id") {
+                                ttsMode = "edge"
+                                if (!edgeVoice.startsWith("id-")) edgeVoice = "id-ID-GadisNeural"
+                            } else if (edgeVoice.startsWith("id-")) {
+                                edgeVoice = "en-US-AriaNeural"
+                            }
+                        }
+                        ChoiceField("TTS mode", ttsMode, configChoices(configurationOptions, "tts_modes"), Modifier.weight(1f)) { selected ->
+                            if (language != "id" || selected == "edge") ttsMode = selected
+                        }
+                    }
+                }
+                item { OutlinedTextField(edgeVoice, { edgeVoice = it }, label = { Text("Edge voice") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            kokoroId,
+                            { kokoroId = it.filter(Char::isDigit) },
+                            label = { Text("Kokoro ID") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = language != "id",
+                        )
+                        OutlinedTextField(
+                            rate,
+                            { rate = it },
+                            label = { Text("Rate") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            volume,
+                            { volume = it },
+                            label = { Text("Volume") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                    }
+                }
+                item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(enabled, { enabled = it }); Text("Enabled") } }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (title.isBlank() || text.isBlank()) return@TextButton
+                val normalizedLanguage = if (language == "id") "id" else "en"
+                val normalizedMode = if (normalizedLanguage == "id") "edge" else ttsMode.ifBlank { "edge" }
+                val defaultVoice = if (normalizedLanguage == "id") "id-ID-GadisNeural" else "en-US-AriaNeural"
+                val normalizedVoice = edgeVoice.ifBlank { defaultVoice }
+                val payload = JSONObject()
+                    .put("title", title.trim())
+                    .put("text", text.trim())
+                    .put("enabled", enabled)
+                    .put("language", normalizedLanguage)
+                    .put("tts_mode", normalizedMode)
+                    .put("edge_voice", normalizedVoice)
+                    .put("kokoro_voice_id", kokoroId.toIntOrNull() ?: 0)
+                    .put("tts_rate", (rate.toDoubleOrNull() ?: 1.0).coerceIn(0.5, 2.0))
+                    .put("tts_volume", (volume.toDoubleOrNull() ?: 1.0).coerceIn(0.0, 1.0))
+                onSave(existing?.optInt("id")?.takeIf { it > 0 }, payload)
+            }) { Text("Save") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

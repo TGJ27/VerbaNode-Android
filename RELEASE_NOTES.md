@@ -1,45 +1,54 @@
-# VerbaNode Android v0.3.2 — Media & Queue UX
+# VerbaNode Android v0.3.3 — Direct Speech & Workflow UX
 
-This release is designed for **VerbaNode Core v0.9.1**.
 
-## Added
+- Type to Talk now uses a chat-style direct-speech screen with Send/keyboard-send behavior, shared queued transcript, and TTS language/engine/voice/rate/volume controls.
+- Script speech controls are back inside Create/Edit Script. New scripts are prefilled from the last script configuration saved on Core; when no previous configuration exists, normal defaults are used.
+This release is designed for **VerbaNode Core v0.9.2+**. RAG/large-knowledge retrieval is intentionally deferred.
 
-- New **Audio Library** screen under More / Management.
-- Upload MP3/WAV files from Android to the VerbaNode host.
-- Play, stop, rename, and delete host audio files.
-- Agent editor now uses Core-provided dropdown choices for LLM model, language, TTS mode, and STT model.
-- Script editor now uses Core-provided dropdown choices for language and TTS mode.
-- Script queue now exposes a persistent **Loop** switch.
-- Queue items now support configurable pause-after-playback seconds.
-- Queue items can be long-pressed and dragged up/down to reorder.
-- Chat now gives more screen area to messages and includes an **Auto-scroll** toggle near the composer.
+## Navigation and chat
 
-## Update identity hardening
+- Bottom navigation remains **Home · Chat · Script · Audio · More**.
+- Home stays intentionally compact: Chat, Agents, Plugins, Scripts, Audio, and Diagnostics.
+- Devices and Backup remain under More.
+- Chat keeps the larger transcript layout with Auto-scroll beside the Chat title.
 
-App version and Core version are not used as device identity. Existing trusted-device credentials are preserved when the same Core `instance_id` is rediscovered after an update. If the Core certificate key genuinely changes, Android asks to trust the new TLS identity while retaining the existing paired credential for that same Core instance.
+## Agent configuration
 
-With Core v0.9.1, source-mode Core identity/state also persists outside replaceable source folders, preventing normal Core updates from appearing as a new server.
+- Agent LLM model is a real dropdown.
+- Choices combine `/api/configuration-options` with the live installed-model catalog from Core so models are not lost when the static/shared list is incomplete.
+- Language, STT, and TTS selectors continue to use Core-provided options.
+
+## Type to Talk
+
+- Added a Type-to-Talk area under More.
+- Typed text is queued directly to Core TTS and does not pass through the LLM.
+- Multiple entries can be added while speech is already playing.
+- The shared Core queue can be played, stopped, cleared, removed, and reordered from Android.
+
+## Script authoring
+
+- Moved reusable speech configuration outside the create-script dialog.
+- Language, TTS mode/voice, speech rate, and volume are saved as persistent defaults.
+- New scripts inherit the last saved configuration instead of resetting after every entry.
+- Editing an existing script preserves its saved speech configuration.
+
+## Audio Library
+
+- Audio remains a primary bottom-nav section.
+- The picker accepts generic audio files instead of being limited to MP3/WAV.
+- Core v0.9.2 advertises/accepts common formats including WAV, MP3, FLAC, OGG/OGA, Opus, M4A, AAC, WMA, AIFF/AIF, WebM audio, MKA, and AMR.
 
 ## Compatibility
 
-- Recommended Core: v0.9.1
+- Required Core: v0.9.2+
 - REST API: v1
 - WebSocket protocol: v1
-- Pairing remains LAN-only.
-- The single-active-controller policy is unchanged.
-## Release build fixes
+- Pairing remains LAN-only and the single-active-controller policy is unchanged.
+- Existing trusted-device identity is not based on application version.
 
-- Pins AndroidX Fragment to stable 1.8.9 so Activity Result APIs pass release lint.
-- Uses AutoMirrored Material icons for Chat, Send, and Logout to remove current Compose deprecation warnings.
-- Includes the self-contained signed APK release builder that reuses the permanent local signing identity.
+## Release build note
 
+The Android source changes are statically validated here, but the final Gradle compile/release APK build must be run on the Windows Android build machine because this environment cannot download the Gradle distribution/dependencies.
 
-## Mobile navigation and chat layout revision
-
-- Bottom navigation is now **Home · Chat · Script · Audio · More**.
-- Audio Library is directly accessible from the bottom bar instead of being hidden under More.
-- Home is intentionally simplified to six primary areas: Chat, Agents, Plugins, Scripts, Audio, and Diagnostics.
-- Devices and Backup remain available under More rather than taking Home dashboard space.
-- Chat uses a compact top bar and moves the Auto-scroll switch onto the same row as the Chat title.
-- Chat conversation controls are shorter and remove redundant helper/subtitle text, giving the transcript more vertical space.
-- The empty-chat placeholder is reduced to a compact state so it does not consume the message area.
+- Audio upload picker now exposes MPEG audio/container MIME types and uploads `.mpeg`, `.mpg`, `.mpga`, and `.mp2` files to Core v0.9.2.
+- Fixed the Type-to-Talk Compose build issue caused by importing the internal `weight` extension directly.

@@ -92,6 +92,7 @@ fun VerbaNodeApp(viewModel: AppViewModel, activity: MainActivity) {
             AppScreen.INFORMATION -> InformationScreen(viewModel)
             AppScreen.SCRIPTS -> ScriptsScreen(viewModel)
             AppScreen.AUDIO -> AudioLibraryScreen(viewModel, activity)
+            AppScreen.TYPE_TO_TALK -> TypeToTalkScreen(viewModel)
             AppScreen.PLUGINS -> PluginsScreen(viewModel)
             AppScreen.SETTINGS -> SettingsScreen(viewModel)
             AppScreen.DEVICES -> DevicesScreen(viewModel)
