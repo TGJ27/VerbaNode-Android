@@ -2,7 +2,7 @@
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.3.3  
+**Current version:** v0.3.6  
 **Required Core:** VerbaNode v0.9.2+  
 **Transport:** local-network HTTPS/WSS only
 
@@ -92,6 +92,26 @@ VerbaNode Android
 
 Core remains authoritative for AI, audio, plugins, database, device credentials and all management state. The Android app is a client; it does not duplicate backend logic.
 
+### v0.3.6 Type to Talk 500 fix
+
+- Removes the unnecessary `/api/configuration-options` dependency from Type to Talk startup.
+- Loads Edge voices directly and safely from Core.
+- Adds built-in fallback language and TTS-mode choices.
+
+### v0.3.5 Edge voice selectors and remembered Script config
+
+- Type to Talk and Create/Edit Script now use Core-backed **Edge voice** dropdowns instead of free-text voice entry.
+- Edge voice choices are filtered by the selected language and show voice name, locale, and gender.
+- New Script dialogs inherit the last speech configuration remembered by Core; normal defaults are used when no prior configuration exists.
+- No Core update is required beyond VerbaNode v0.9.2.
+
+### v0.3.4 chat status and Type-to-Talk layout
+
+- Restored live Chat status from Core WebSocket/pipeline events: Recording, Transcribing, Generating, Preparing speech, Speaking, Listening, and Ready.
+- Type-to-Talk model configuration is collapsed by default and can be shown/hidden on demand.
+- Type-to-Talk history is height-capped instead of expanding to consume the screen.
+- Type-to-Talk composer and playback controls stay anchored at the bottom and use IME padding so the typing area remains visible with the keyboard open.
+
 ### v0.3.3 direct speech and workflow UX
 
 - Dedicated **Audio** bottom-nav area with broad/common-format uploads handled by Core
@@ -102,4 +122,7 @@ Core remains authoritative for AI, audio, plugins, database, device credentials 
 - Larger Chat transcript area with Auto-scroll beside the Chat title
 - Script queue loop, per-item pause, and drag reorder
 - RAG/large-knowledge retrieval is intentionally deferred to a later release
+- Type to Talk now uses a chat-style composer/queue with remembered independent TTS settings.
+- Audio picking includes MPEG MIME variants and MPEG-family filenames supported by Core v0.9.2.
+- Fixed the Android Type-to-Talk/Dashboard compile regressions from the previous work-in-progress patch.
 

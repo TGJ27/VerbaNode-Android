@@ -63,6 +63,23 @@ private fun configChoices(config: JSONObject?, key: String): List<Pair<String, S
 private fun sttChoices(config: JSONObject?, language: String): List<Pair<String, String>> =
     choiceArray(config?.optJSONObject("stt_models")?.optJSONArray(language))
 
+private fun edgeVoiceChoices(config: JSONObject?, language: String): List<Pair<String, String>> {
+    val array = config?.optJSONArray("edge_voices") ?: JSONArray()
+    val prefix = if (language == "id") "id-" else "en-"
+    return buildList {
+        for (index in 0 until array.length()) {
+            val voice = array.optJSONObject(index) ?: continue
+            val shortName = voice.optString("short_name").trim()
+            if (shortName.isBlank() || !shortName.lowercase().startsWith(prefix)) continue
+            val name = voice.optString("name", shortName).trim().ifBlank { shortName }
+            val locale = voice.optString("locale").trim()
+            val gender = voice.optString("gender").trim()
+            val details = listOf(locale, gender).filter { it.isNotBlank() }.joinToString(" · ")
+            add(shortName to if (details.isBlank()) name else "$name · $details")
+        }
+    }
+}
+
 @Composable
 internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
@@ -420,7 +437,14 @@ private fun ScriptDialog(
                         }
                     }
                 }
-                item { OutlinedTextField(edgeVoice, { edgeVoice = it }, label = { Text("Edge voice") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
+                item {
+                    ChoiceField(
+                        "Edge voice",
+                        edgeVoice,
+                        edgeVoiceChoices(configurationOptions, language),
+                        Modifier.fillMaxWidth(),
+                    ) { edgeVoice = it }
+                }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(

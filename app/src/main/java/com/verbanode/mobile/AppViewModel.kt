@@ -71,7 +71,7 @@ data class MobileUiState(
     val scriptDefaults: JSONObject? = null,
     val typeToTalkItems: List<JSONObject> = emptyList(),
     val typeToTalkState: String = "idle",
-    val typeToTalkDefaults: JSONObject? = null,
+    val typeToTalkSettings: JSONObject? = null,
     val audioLibraryItems: List<JSONObject> = emptyList(),
     val audioLibraryPlaying: String? = null,
     val chatAutoScroll: Boolean = true,
@@ -86,6 +86,7 @@ data class MobileUiState(
     val diagnosticsStatus: JSONObject? = null,
     val backupStatus: JSONObject? = null,
     val statusText: String = "",
+    val chatStatus: String = "Ready",
     val busy: Boolean = false,
     val recording: Boolean = false,
     val error: String? = null,
@@ -128,6 +129,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun friendlyError(error: Exception): String = when (error) {
         is ApiException -> error.message
         else -> error.message ?: error.javaClass.simpleName
+    }
+
+    private fun pipelineStatusLabel(stage: String): String = when (stage.lowercase()) {
+        "starting" -> "Starting"
+        "idle" -> if (_ui.value.mode == "conversation") "Listening" else "Ready"
+        "listening" -> "Listening"
+        "recording" -> "Recording"
+        "transcribing" -> "Transcribing"
+        "thinking" -> "Generating"
+        "tooling" -> "Running tool"
+        "speaking" -> "Speaking"
+        "recovering" -> "Recovering"
+        "error" -> "Error"
+        "stopped" -> "Ready"
+        else -> stage.replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
+
+    private fun modeStatusLabel(mode: String): String = when (mode) {
+        "conversation" -> "Listening"
+        "ptt", "browser_ptt" -> "Recording"
+        "processing" -> "Transcribing"
+        else -> "Ready"
     }
 
     fun clearMessage() = _ui.update { it.copy(error = null, notice = null) }
@@ -387,6 +410,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 mode = data.mode,
                 conversationActive = data.mode == "conversation",
                 recording = if (data.mode == "browser_ptt") it.recording else false,
+                chatStatus = when {
+                    !data.sttMode.isNullOrBlank() && data.sttMode != "idle" -> pipelineStatusLabel(data.sttMode)
+                    !data.aiMode.isNullOrBlank() && data.aiMode != "idle" -> pipelineStatusLabel(data.aiMode)
+                    !data.ttsMode.isNullOrBlank() && data.ttsMode != "idle" -> pipelineStatusLabel(data.ttsMode)
+                    else -> modeStatusLabel(data.mode)
+                },
             )
         }
     }
@@ -399,7 +428,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             onEvent = { type, data ->
                 viewModelScope.launch {
                     when (type) {
-                        "message_added", "assistant_complete", "conversation_changed", "conversation_cleared" -> refreshConversationInternal()
+                        "message_added", "conversation_changed", "conversation_cleared" -> refreshConversationInternal()
+                        "assistant_start", "assistant_token" -> _ui.update { it.copy(chatStatus = "Generating") }
+                        "assistant_complete" -> {
+                            refreshConversationInternal()
+                            _ui.update { it.copy(chatStatus = if (it.mode == "conversation") "Listening" else "Ready") }
+                        }
+                        "stt_started" -> _ui.update { it.copy(chatStatus = "Transcribing") }
+                        "listening" -> if (data?.optBoolean("active", false) == true) _ui.update { it.copy(chatStatus = "Listening") }
+                        "tts_started" -> _ui.update { it.copy(chatStatus = "Preparing speech") }
+                        "tts_chunk_generating" -> _ui.update { it.copy(chatStatus = "Preparing speech") }
+                        "tts_chunk" -> _ui.update { it.copy(chatStatus = "Speaking") }
+                        "tts_stopped" -> _ui.update { it.copy(chatStatus = if (it.mode == "conversation") "Listening" else "Ready") }
+                        "pipeline_state" -> data?.optString("state")?.takeIf { it.isNotBlank() }?.let { stage ->
+                            _ui.update { it.copy(pipelineStatus = data, chatStatus = pipelineStatusLabel(stage)) }
+                        }
                         "agents_changed", "agent_changed" -> { loadBootstrapInternal(); if (_ui.value.screen == AppScreen.AGENTS) loadAgentsManagementInternal() }
                         "plugins_changed" -> if (_ui.value.screen == AppScreen.PLUGINS) loadPluginsInternal()
                         "scripts_changed", "queue_changed", "queue_state", "script_defaults_changed" -> if (_ui.value.screen == AppScreen.SCRIPTS) loadScriptsInternal()
@@ -416,6 +459,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                     mode = mode,
                                     conversationActive = mode == "conversation",
                                     recording = if (mode == "browser_ptt") it.recording else false,
+                                    chatStatus = modeStatusLabel(mode),
                                 )
                             }
                         }
@@ -423,7 +467,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             },
-            onState = { connected, label -> viewModelScope.launch { _ui.update { it.copy(connected = connected, connectionLabel = label) } } },
+            onState = { connected, label ->
+                viewModelScope.launch {
+                    _ui.update {
+                        it.copy(
+                            connected = connected,
+                            connectionLabel = label,
+                            chatStatus = if (connected) {
+                                if (it.chatStatus == "Disconnected") modeStatusLabel(it.mode) else it.chatStatus
+                            } else "Disconnected",
+                        )
+                    }
+                }
+            },
             onSessionLost = { viewModelScope.launch { sessionLost("Controller session ended") } },
         ).also { it.connect() }
     }
@@ -431,7 +487,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun sessionLost(message: String) {
         webSocket?.close()
         webSocket = null
-        _ui.update { it.copy(session = null, connected = false, connectionLabel = "Disconnected", screen = AppScreen.LOGIN, conversationActive = false, notice = message) }
+        _ui.update { it.copy(session = null, connected = false, connectionLabel = "Disconnected", chatStatus = "Disconnected", screen = AppScreen.LOGIN, conversationActive = false, notice = message) }
     }
 
     fun selectAgent(agentId: Int) = runBusy {
@@ -491,6 +547,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
+        _ui.update { it.copy(chatStatus = "Generating") }
         runBusy {
             val localApi = api ?: return@runBusy
             val token = _ui.value.session?.token ?: return@runBusy
@@ -523,7 +580,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pttStart = started
         try {
             recorder.start()
-            _ui.update { it.copy(recording = true, error = null) }
+            _ui.update { it.copy(recording = true, chatStatus = "Recording", error = null) }
         } catch (error: Exception) {
             started.complete(false)
             _ui.update { it.copy(error = friendlyError(error), recording = false) }
@@ -536,7 +593,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (error: Exception) {
                 if (!started.isCompleted) started.complete(false)
                 recorder.cancel()
-                _ui.update { it.copy(error = friendlyError(error), recording = false) }
+                _ui.update { it.copy(error = friendlyError(error), recording = false, chatStatus = modeStatusLabel(it.mode)) }
                 runCatching { withContext(Dispatchers.IO) { localApi.cancelBrowserPtt(token) } }
             }
         }
@@ -547,7 +604,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val wav = recorder.stop()
         val startGate = pttStart
         pttStart = null
-        _ui.update { it.copy(recording = false, busy = true) }
+        _ui.update { it.copy(recording = false, busy = true, chatStatus = "Transcribing") }
         viewModelScope.launch {
             try {
                 val localApi = api ?: return@launch
@@ -571,7 +628,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         recorder.cancel()
         pttStart?.let { if (!it.isCompleted) it.complete(false) }
         pttStart = null
-        _ui.update { it.copy(recording = false) }
+        _ui.update { it.copy(recording = false, chatStatus = modeStatusLabel(it.mode)) }
         val localApi = api ?: return
         val token = _ui.value.session?.token ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { localApi.cancelBrowserPtt(token) } }
@@ -688,6 +745,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         val modelArray = JSONArray(); merged.forEach(modelArray::put)
         options.put("llm_models", modelArray)
+
+        val edgeVoicePayload = runCatching {
+            withContext(Dispatchers.IO) { localApi.edgeVoices(token) }
+        }.getOrNull()
+        val voices = edgeVoicePayload?.optJSONArray("voices")
+        if (voices != null) {
+            options.put("edge_voices", voices)
+            options.put("edge_voices_source", edgeVoicePayload.optString("source"))
+        }
         _ui.update { it.copy(configurationOptions = options) }
     }
 
@@ -817,26 +883,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val (localApi, token) = requireApiSession()
         val payload = withContext(Dispatchers.IO) { localApi.typeToTalk(token) }
         val items = (payload.optJSONArray("items") ?: JSONArray()).objectList()
-        _ui.update {
-            it.copy(
-                typeToTalkItems = items,
-                typeToTalkState = payload.optString("state", "idle"),
-                typeToTalkDefaults = payload.optJSONObject("defaults") ?: it.typeToTalkDefaults,
-            )
-        }
+        _ui.update { it.copy(typeToTalkItems = items, typeToTalkState = payload.optString("state", "idle"), typeToTalkSettings = payload.optJSONObject("settings") ?: it.typeToTalkSettings) }
+    }
+
+    private suspend fun loadTypeToTalkVoiceOptionsInternal() {
+        val (localApi, token) = requireApiSession()
+        val edgeVoicePayload = runCatching {
+            withContext(Dispatchers.IO) { localApi.edgeVoices(token) }
+        }.getOrNull() ?: return
+        val voices = edgeVoicePayload.optJSONArray("voices") ?: return
+        val options = JSONObject((_ui.value.configurationOptions ?: JSONObject()).toString())
+        options.put("edge_voices", voices)
+        options.put("edge_voices_source", edgeVoicePayload.optString("source"))
+        _ui.update { it.copy(configurationOptions = options) }
     }
 
     fun openTypeToTalk() = runBusy {
-        loadConfigurationOptionsInternal()
         loadTypeToTalkInternal()
+        loadTypeToTalkVoiceOptionsInternal()
         _ui.update { it.copy(screen = AppScreen.TYPE_TO_TALK) }
     }
-    fun addTypeToTalk(text: String, config: JSONObject) = runBusy {
+    fun addTypeToTalk(text: String, settings: JSONObject? = null) = runBusy {
         if (text.isBlank()) return@runBusy
-        val payload = JSONObject(config.toString()).put("text", text.trim())
         val (a,t)=requireApiSession()
-        withContext(Dispatchers.IO){a.addTypeToTalk(t,payload)}
+        withContext(Dispatchers.IO){a.addTypeToTalk(t,text.trim(),settings)}
+        if (settings != null) _ui.update { it.copy(typeToTalkSettings = JSONObject(settings.toString())) }
         loadTypeToTalkInternal()
+    }
+    fun saveTypeToTalkSettings(payload: JSONObject) = runBusy {
+        val (a,t)=requireApiSession()
+        val saved = withContext(Dispatchers.IO) { a.updateTypeToTalkSettings(t, payload) }
+        _ui.update { it.copy(typeToTalkSettings = saved) }
     }
     fun typeToTalkAction(action: String) = runBusy {
         val (a,t)=requireApiSession(); withContext(Dispatchers.IO){ when(action){ "play" -> a.playTypeToTalk(t); "stop" -> a.stopTypeToTalk(t); "clear" -> a.clearTypeToTalk(t) } }; loadTypeToTalkInternal()

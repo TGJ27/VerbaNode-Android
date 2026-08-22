@@ -245,7 +245,12 @@ class VerbaNodeApi(
     }
 
     fun typeToTalk(sessionToken: String): JSONObject = request("/api/type-to-talk", sessionToken = sessionToken)
-    fun addTypeToTalk(sessionToken: String, payload: JSONObject): JSONObject = request("/api/type-to-talk", "POST", sessionToken, payload)
+    fun addTypeToTalk(sessionToken: String, text: String, settings: JSONObject? = null): JSONObject {
+        val payload = settings?.let { JSONObject(it.toString()) } ?: JSONObject()
+        payload.put("text", text)
+        return request("/api/type-to-talk", "POST", sessionToken, payload)
+    }
+    fun updateTypeToTalkSettings(sessionToken: String, payload: JSONObject): JSONObject = request("/api/type-to-talk/settings", "PATCH", sessionToken, payload)
     fun playTypeToTalk(sessionToken: String) { request("/api/type-to-talk/play", "POST", sessionToken) }
     fun stopTypeToTalk(sessionToken: String) { request("/api/type-to-talk/stop", "POST", sessionToken) }
     fun clearTypeToTalk(sessionToken: String) { request("/api/type-to-talk", "DELETE", sessionToken) }
@@ -300,15 +305,13 @@ class VerbaNodeApi(
 
     fun configurationOptions(sessionToken: String): JSONObject = request("/api/configuration-options", sessionToken = sessionToken)
 
+    fun edgeVoices(sessionToken: String, refresh: Boolean = false): JSONObject = request(
+        "/api/tts/edge-voices?refresh=$refresh", sessionToken = sessionToken,
+    )
+
     fun audioLibrary(sessionToken: String): JSONObject = request("/api/audio-library", sessionToken = sessionToken)
     fun uploadAudio(sessionToken: String, bytes: ByteArray, filename: String, mimeType: String): JSONObject {
-        val lower = filename.lowercase()
-        val fallbackMime = when {
-            lower.endsWith(".mp3") || lower.endsWith(".mpeg") || lower.endsWith(".mpg") || lower.endsWith(".mpga") -> "audio/mpeg"
-            lower.endsWith(".mp2") -> "audio/mp2"
-            else -> "audio/wav"
-        }
-        val media = mimeType.ifBlank { fallbackMime }.toMediaType()
+        val media = (mimeType.ifBlank { if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "audio/wav" }).toMediaType()
         val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("file", filename, bytes.toRequestBody(media)).build()
         return request("/api/audio-library/upload", "POST", sessionToken, body = multipart)

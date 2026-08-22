@@ -375,6 +375,19 @@ internal fun ChatScreen(viewModel: AppViewModel, activity: Activity) {
                 }
             }
             Spacer(Modifier.height(4.dp))
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp),
+            ) {
+                Text(
+                    "Status: ${state.chatStatus}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                )
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = text,

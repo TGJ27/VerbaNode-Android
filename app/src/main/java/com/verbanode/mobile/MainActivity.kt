@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
     }
 
     fun chooseAudioForUpload() {
-        openAudio.launch(arrayOf("audio/*", "audio/mpeg", "audio/mp2", "audio/x-mpeg", "video/mpeg", "application/ogg"))
+        openAudio.launch(arrayOf("audio/*", "audio/mpeg", "video/mpeg", "application/ogg", "application/octet-stream"))
     }
 
     fun chooseBackupForRestore() {
