@@ -343,7 +343,7 @@ internal fun DiagnosticsScreen(viewModel: AppViewModel, activity: MainActivity) 
                 DashboardCard("Diagnostics data") {
                     OutlinedButton(onClick = viewModel::clearDiagnosticLogs, modifier = Modifier.fillMaxWidth()) { Text("Clear diagnostic logs") }
                     Button(
-                        onClick = { viewModel.exportDiagnostics { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
+                        onClick = { viewModel.exportDiagnostics { file, name, mime -> activity.saveDocument(file, name, mime) } },
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     ) { Text("Export diagnostics ZIP") }
                 }
@@ -370,7 +370,7 @@ internal fun DataScreen(viewModel: AppViewModel, activity: MainActivity) {
             item {
                 DashboardCard("Backup & restore", "Restore replaces Core data and may require restarting VerbaNode.") {
                     Button(
-                        onClick = { viewModel.exportBackup { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
+                        onClick = { viewModel.exportBackup { file, name, mime -> activity.saveDocument(file, name, mime) } },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Download full backup") }
                     OutlinedButton(onClick = activity::chooseBackupForRestore, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Restore from backup ZIP") }

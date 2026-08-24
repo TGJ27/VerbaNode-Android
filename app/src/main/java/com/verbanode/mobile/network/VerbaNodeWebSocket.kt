@@ -15,7 +15,8 @@ class VerbaNodeWebSocket(
     private val api: VerbaNodeApi,
     private val sessionToken: String,
     private val onEvent: (String, JSONObject?) -> Unit,
-    private val onState: (Boolean, String) -> Unit,
+    private val onState: (ConnectionState, String) -> Unit,
+    private val onProtocolError: (String) -> Unit,
     private val onSessionLost: () -> Unit,
 ) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
@@ -61,7 +62,11 @@ class VerbaNodeWebSocket(
             synchronized(stateLock) { connecting = false }
             return
         }
-        onState(false, "Connecting")
+        val reconnecting = synchronized(stateLock) { reconnectAttempts > 0 }
+        onState(
+            if (reconnecting) ConnectionState.RECONNECTING else ConnectionState.CONNECTING,
+            if (reconnecting) "Reconnecting" else "Connecting",
+        )
         try {
             val ticket = api.wsTicket(sessionToken)
             if (closed) {
@@ -85,7 +90,7 @@ class VerbaNodeWebSocket(
         } catch (error: Exception) {
             synchronized(stateLock) { connecting = false }
             if (!closed) {
-                onState(false, error.message ?: "WebSocket connection failed")
+                onState(ConnectionState.RECONNECTING, error.message ?: "WebSocket connection failed")
                 if (error is ApiException && error.status == 401) {
                     onSessionLost()
                 } else {
@@ -113,16 +118,24 @@ class VerbaNodeWebSocket(
                 webSocket.close(1000, "Superseded")
                 return
             }
-            onState(true, "Connected")
+            onState(ConnectionState.CONNECTED, "Connected")
             startHeartbeat(webSocket)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            runCatching {
+            try {
                 val payload = JSONObject(text)
-                val type = payload.optString("type", payload.optString("event"))
-                val data = payload.opt("data") as? JSONObject
+                val type = payload.optString("type", payload.optString("event")).trim()
+                require(type.isNotBlank()) { "WebSocket event is missing a type" }
+                val rawData = payload.opt("data")
+                val data = when (rawData) {
+                    null, JSONObject.NULL -> null
+                    is JSONObject -> rawData
+                    else -> error("WebSocket event data must be a JSON object")
+                }
                 onEvent(type, data)
+            } catch (error: Exception) {
+                onProtocolError(error.message ?: "Malformed WebSocket event")
             }
         }
 
@@ -133,14 +146,19 @@ class VerbaNodeWebSocket(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             if (!markDisconnected(webSocket)) return
             if (closed) return
-            onState(false, reason.ifBlank { "Disconnected" })
-            if (code == 4401) onSessionLost() else scheduleReconnect()
+            if (code == 4401) {
+                onState(ConnectionState.DISCONNECTED, reason.ifBlank { "Session ended" })
+                onSessionLost()
+            } else {
+                onState(ConnectionState.RECONNECTING, reason.ifBlank { "Reconnecting" })
+                scheduleReconnect()
+            }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (!markDisconnected(webSocket)) return
             if (closed) return
-            onState(false, t.message ?: "Connection lost")
+            onState(ConnectionState.RECONNECTING, t.message ?: "Connection lost")
             scheduleReconnect()
         }
     }

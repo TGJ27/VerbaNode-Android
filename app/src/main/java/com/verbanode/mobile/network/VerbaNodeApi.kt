@@ -10,10 +10,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
+import okio.BufferedSink
+import okio.source
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -81,7 +86,12 @@ class VerbaNodeApi(
         body: RequestBody? = null,
     ): JSONObject {
         val text = requestText(path, method, sessionToken, json, body)
-        return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() }
+        if (text.isBlank()) return JSONObject()
+        return try {
+            JSONObject(text)
+        } catch (error: Exception) {
+            throw ApiProtocolException("VerbaNode returned malformed JSON for $path", error)
+        }
     }
 
     private fun requestArray(
@@ -91,7 +101,12 @@ class VerbaNodeApi(
         json: JSONObject? = null,
     ): JSONArray {
         val text = requestText(path, method, sessionToken, json)
-        return if (text.isBlank()) JSONArray() else runCatching { JSONArray(text) }.getOrElse { JSONArray() }
+        if (text.isBlank()) return JSONArray()
+        return try {
+            JSONArray(text)
+        } catch (error: Exception) {
+            throw ApiProtocolException("VerbaNode returned malformed JSON array for $path", error)
+        }
     }
 
     private suspend fun requestUnitCancellable(
@@ -126,9 +141,38 @@ class VerbaNodeApi(
 
     private fun requestBytes(path: String, sessionToken: String): ByteArray {
         client.newCall(buildRequest(path, sessionToken = sessionToken)).execute().use { response ->
-            val bytes = response.body.bytes()
-            if (!response.isSuccessful) throw errorFrom(response.code, bytes.toString(Charsets.UTF_8))
-            return bytes
+            if (!response.isSuccessful) {
+                val text = response.body.string()
+                throw errorFrom(response.code, text)
+            }
+            return response.body.bytes()
+        }
+    }
+
+    private fun requestToFile(path: String, sessionToken: String, destination: File): File {
+        client.newCall(buildRequest(path, sessionToken = sessionToken)).execute().use { response ->
+            if (!response.isSuccessful) {
+                val text = response.body.string()
+                throw errorFrom(response.code, text)
+            }
+            destination.parentFile?.mkdirs()
+            FileOutputStream(destination).use { output ->
+                response.body.byteStream().use { input -> input.copyTo(output, DEFAULT_BUFFER_SIZE) }
+            }
+            return destination
+        }
+    }
+
+    private fun streamingBody(
+        mimeType: String,
+        contentLength: Long?,
+        openStream: () -> InputStream,
+    ): RequestBody = object : RequestBody() {
+        private val mediaType = mimeType.toMediaType()
+        override fun contentType() = mediaType
+        override fun contentLength(): Long = contentLength?.takeIf { it >= 0L } ?: -1L
+        override fun writeTo(sink: BufferedSink) {
+            openStream().use { input -> sink.writeAll(input.source()) }
         }
     }
 
@@ -335,13 +379,20 @@ class VerbaNodeApi(
     fun runSelfTest(sessionToken: String): JSONObject = request("/api/diagnostics/self-test", "POST", sessionToken)
     fun clearDiagnosticLogs(sessionToken: String) { request("/api/diagnostics/logs", "DELETE", sessionToken) }
     fun clearDiagnosticTurns(sessionToken: String) { request("/api/diagnostics/turns", "DELETE", sessionToken) }
-    fun diagnosticsExport(sessionToken: String): ByteArray = requestBytes("/api/diagnostics/export", sessionToken)
+    fun diagnosticsExportTo(sessionToken: String, destination: File): File =
+        requestToFile("/api/diagnostics/export", sessionToken, destination)
 
     fun backupStatus(sessionToken: String): JSONObject = request("/api/backup/status", sessionToken = sessionToken)
-    fun downloadBackup(sessionToken: String): ByteArray = requestBytes("/api/backup", sessionToken)
-    fun restoreBackup(sessionToken: String, bytes: ByteArray, filename: String): JSONObject {
+    fun downloadBackupTo(sessionToken: String, destination: File): File =
+        requestToFile("/api/backup", sessionToken, destination)
+    fun restoreBackup(
+        sessionToken: String,
+        filename: String,
+        contentLength: Long?,
+        openStream: () -> InputStream,
+    ): JSONObject {
         val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("file", filename, bytes.toRequestBody("application/zip".toMediaType())).build()
+            .addFormDataPart("file", filename, streamingBody("application/zip", contentLength, openStream)).build()
         return request("/api/restore", "POST", sessionToken, body = multipart)
     }
 
@@ -353,10 +404,17 @@ class VerbaNodeApi(
     )
 
     fun audioLibrary(sessionToken: String): JSONObject = request("/api/audio-library", sessionToken = sessionToken)
-    fun uploadAudio(sessionToken: String, bytes: ByteArray, filename: String, mimeType: String): JSONObject {
-        val media = (mimeType.ifBlank { if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "audio/wav" }).toMediaType()
+    fun uploadAudio(
+        sessionToken: String,
+        filename: String,
+        mimeType: String,
+        contentLength: Long?,
+        openStream: () -> InputStream,
+    ): JSONObject {
+        val media = mimeType.takeIf { it.isNotBlank() && '*' !in it }
+            ?: if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "application/octet-stream"
         val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("file", filename, bytes.toRequestBody(media)).build()
+            .addFormDataPart("file", filename, streamingBody(media, contentLength, openStream)).build()
         return request("/api/audio-library/upload", "POST", sessionToken, body = multipart)
     }
     fun playAudio(sessionToken: String, name: String): JSONObject = request("/api/audio-library/${pathSegment(name)}/play", "POST", sessionToken)
@@ -380,6 +438,10 @@ class VerbaNodeApi(
             sessionToken = sessionToken,
             timeoutSeconds = 8,
         )
-        return JSONObject(text).getString("ticket")
+        return try {
+            JSONObject(text).getString("ticket")
+        } catch (error: Exception) {
+            throw ApiProtocolException("VerbaNode returned an invalid WebSocket ticket response", error)
+        }
     }
 }

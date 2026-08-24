@@ -81,6 +81,8 @@ data class PairingClaim(
 
 data class ApiException(val status: Int, val code: String?, override val message: String) : Exception(message)
 
+class ApiProtocolException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
 fun parseClientInfo(json: JSONObject): ClientInfo {
     val server = json.optJSONObject("server") ?: JSONObject()
     val api = json.optJSONObject("api") ?: JSONObject()
@@ -171,3 +173,105 @@ fun parseDevices(json: JSONObject): List<TrustedDevice> =
             activeController = value.optBoolean("active_controller", false),
         )
     }
+
+data class TypeToTalkItem(
+    val id: Int,
+    val text: String,
+    val position: Int,
+    val status: String,
+    val createdAt: String?,
+)
+
+data class AudioLibraryItem(
+    val name: String,
+    val sizeBytes: Long,
+    val modifiedAt: String?,
+    val durationSeconds: Double?,
+    val playing: Boolean,
+)
+
+fun parseTypeToTalkItems(array: JSONArray): List<TypeToTalkItem> = array.objects().map { value ->
+    TypeToTalkItem(
+        id = value.optInt("id"),
+        text = value.optString("text"),
+        position = value.optInt("position", 0),
+        status = value.optString("status", "waiting"),
+        createdAt = value.optString("created_at").ifBlank { null },
+    )
+}
+
+fun parseAudioLibraryItems(array: JSONArray): List<AudioLibraryItem> = array.objects().mapNotNull { value ->
+    val name = value.optString("name").trim()
+    if (name.isBlank()) return@mapNotNull null
+    AudioLibraryItem(
+        name = name,
+        sizeBytes = value.optLong("size_bytes", 0L),
+        modifiedAt = value.optString("modified_at").ifBlank { null },
+        durationSeconds = if (value.has("duration_seconds") && !value.isNull("duration_seconds")) {
+            value.optDouble("duration_seconds").takeIf { it.isFinite() && it >= 0.0 }
+        } else {
+            null
+        },
+        playing = value.optBoolean("playing", false),
+    )
+}
+
+data class ScriptItem(
+    val id: Int,
+    val title: String,
+    val text: String,
+    val enabled: Boolean,
+    val language: String,
+    val ttsMode: String,
+    val edgeVoice: String,
+    val kokoroVoiceId: Int,
+    val ttsRate: Double,
+    val ttsVolume: Double,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("title", title)
+        .put("text", text)
+        .put("enabled", enabled)
+        .put("language", language)
+        .put("tts_mode", ttsMode)
+        .put("edge_voice", edgeVoice)
+        .put("kokoro_voice_id", kokoroVoiceId)
+        .put("tts_rate", ttsRate)
+        .put("tts_volume", ttsVolume)
+}
+
+data class ScriptQueueItem(
+    val id: Int,
+    val scriptId: Int,
+    val position: Int,
+    val status: String,
+    val pauseAfterSeconds: Double,
+    val title: String,
+)
+
+fun parseScriptItems(array: JSONArray): List<ScriptItem> = array.objects().map { value ->
+    ScriptItem(
+        id = value.optInt("id"),
+        title = value.optString("title", "Script"),
+        text = value.optString("text"),
+        enabled = value.optBoolean("enabled", true),
+        language = value.optString("language", "en"),
+        ttsMode = value.optString("tts_mode", "edge"),
+        edgeVoice = value.optString("edge_voice", "en-US-AriaNeural"),
+        kokoroVoiceId = value.optInt("kokoro_voice_id", 0),
+        ttsRate = value.optDouble("tts_rate", 1.0),
+        ttsVolume = value.optDouble("tts_volume", 1.0),
+    )
+}
+
+fun parseScriptQueueItems(array: JSONArray): List<ScriptQueueItem> = array.objects().map { value ->
+    ScriptQueueItem(
+        id = value.optInt("id"),
+        scriptId = value.optInt("script_id"),
+        position = value.optInt("position", 0),
+        status = value.optString("status", "waiting"),
+        pauseAfterSeconds = value.optDouble("pause_after_seconds", 0.0),
+        title = value.optString("title", value.optString("script_title", "Queued script")),
+    )
+}

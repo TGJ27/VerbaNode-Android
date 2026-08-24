@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.MainActivity
+import com.verbanode.mobile.network.ScriptItem
+import com.verbanode.mobile.network.ScriptQueueItem
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -284,7 +286,7 @@ private fun InfoDialog(existing: JSONObject?, onDismiss: () -> Unit, onSave: (In
 @Composable
 internal fun ScriptsScreen(viewModel: AppViewModel) {
     val state by viewModel.ui.collectAsState()
-    var editing by remember { mutableStateOf<JSONObject?>(null) }
+    var editing by remember { mutableStateOf<ScriptItem?>(null) }
     var creating by remember { mutableStateOf(false) }
     ManagementScaffold(viewModel, "Scripts & Queue", AppScreen.SCRIPTS) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -312,23 +314,23 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
                 }
             }
             item { SectionTitle("Scripts") }
-            items(state.scriptItems, key = { it.optInt("id") }) { script ->
+            items(state.scriptItems, key = { it.id }) { script ->
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(script.optString("title", "Script"), fontWeight = FontWeight.Bold)
-                                Text("${script.optString("language", "en")} · ${script.optString("tts_mode", "edge")}", style = MaterialTheme.typography.bodySmall)
+                                Text(script.title, fontWeight = FontWeight.Bold)
+                                Text("${script.language} · ${script.ttsMode}", style = MaterialTheme.typography.bodySmall)
                             }
-                            if (!script.optBoolean("enabled", true)) Pill("DISABLED")
+                            if (!script.enabled) Pill("DISABLED")
                         }
-                        Text(script.optString("text"), style = MaterialTheme.typography.bodySmall, maxLines = 4, modifier = Modifier.padding(top = 8.dp))
+                        Text(script.text, style = MaterialTheme.typography.bodySmall, maxLines = 4, modifier = Modifier.padding(top = 8.dp))
                         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(onClick = { viewModel.runScriptNow(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Run") }
-                            OutlinedButton(onClick = { viewModel.queueScript(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Queue") }
+                            Button(onClick = { viewModel.runScriptNow(script.id) }, enabled = script.enabled, modifier = Modifier.weight(1f)) { Text("Run") }
+                            OutlinedButton(onClick = { viewModel.queueScript(script.id) }, enabled = script.enabled, modifier = Modifier.weight(1f)) { Text("Queue") }
                             OutlinedButton(onClick = { editing = script }, modifier = Modifier.weight(1f)) { Text("Edit") }
                         }
-                        TextButton(onClick = { viewModel.deleteScript(script.optInt("id")) }) { Text("Delete") }
+                        TextButton(onClick = { viewModel.deleteScript(script.id) }) { Text("Delete") }
                     }
                 }
             }
@@ -342,11 +344,11 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
 }
 
 @Composable
-private fun QueueItemRow(viewModel: AppViewModel, item: JSONObject) {
-    val id = item.optInt("id")
+private fun QueueItemRow(viewModel: AppViewModel, item: ScriptQueueItem) {
+    val id = item.id
     var dragOffset by remember(id) { mutableStateOf(0f) }
-    var pauseText by remember(id, item.optDouble("pause_after_seconds", 0.0)) {
-        mutableStateOf(item.optDouble("pause_after_seconds", 0.0).toString().removeSuffix(".0"))
+    var pauseText by remember(id, item.pauseAfterSeconds) {
+        mutableStateOf(item.pauseAfterSeconds.toString().removeSuffix(".0"))
     }
     val threshold = with(LocalDensity.current) { 46.dp.toPx() }
     Column(Modifier.fillMaxWidth()) {
@@ -367,7 +369,7 @@ private fun QueueItemRow(viewModel: AppViewModel, item: JSONObject) {
                 fontWeight = FontWeight.Bold,
             )
             Column(Modifier.weight(1f)) {
-                Text(item.optString("title", item.optString("script_title", "Queued script")), fontWeight = FontWeight.SemiBold)
+                Text(item.title, fontWeight = FontWeight.SemiBold)
                 Text("Long-press and drag ☰ to reorder", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TextButton(onClick = { viewModel.removeQueueItem(id) }) { Text("Remove") }
@@ -388,17 +390,17 @@ private fun QueueItemRow(viewModel: AppViewModel, item: JSONObject) {
 
 @Composable
 private fun ScriptDialog(
-    existing: JSONObject?,
+    existing: ScriptItem?,
     rememberedDefaults: JSONObject?,
     configurationOptions: JSONObject?,
     onDismiss: () -> Unit,
     onSave: (Int?, JSONObject) -> Unit,
 ) {
-    val source = existing ?: rememberedDefaults ?: JSONObject()
-    val stateKey = "${existing?.optInt("id", 0) ?: 0}:${source.toString()}"
-    var title by remember(stateKey) { mutableStateOf(existing?.optString("title") ?: "") }
-    var text by remember(stateKey) { mutableStateOf(existing?.optString("text") ?: "") }
-    var enabled by remember(stateKey) { mutableStateOf(existing?.optBoolean("enabled", true) ?: true) }
+    val source = existing?.toJson() ?: rememberedDefaults ?: JSONObject()
+    val stateKey = "${existing?.id ?: 0}:${source}"
+    var title by remember(stateKey) { mutableStateOf(existing?.title ?: "") }
+    var text by remember(stateKey) { mutableStateOf(existing?.text ?: "") }
+    var enabled by remember(stateKey) { mutableStateOf(existing?.enabled ?: true) }
     var language by remember(stateKey) { mutableStateOf(source.optString("language", "en")) }
     var ttsMode by remember(stateKey) { mutableStateOf(source.optString("tts_mode", "edge")) }
     var edgeVoice by remember(stateKey) { mutableStateOf(source.optString("edge_voice", "en-US-AriaNeural")) }
@@ -494,7 +496,7 @@ private fun ScriptDialog(
                     .put("kokoro_voice_id", kokoroId.toIntOrNull() ?: 0)
                     .put("tts_rate", (rate.toDoubleOrNull() ?: 1.0).coerceIn(0.5, 2.0))
                     .put("tts_volume", (volume.toDoubleOrNull() ?: 1.0).coerceIn(0.0, 1.0))
-                onSave(existing?.optInt("id")?.takeIf { it > 0 }, payload)
+                onSave(existing?.id?.takeIf { it > 0 }, payload)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

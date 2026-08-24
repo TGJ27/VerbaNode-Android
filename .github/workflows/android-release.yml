@@ -33,8 +33,8 @@ jobs:
           VN_KEYSTORE_PASSWORD: ${{ secrets.VERBANODE_KEYSTORE_PASSWORD }}
           VN_KEY_ALIAS: ${{ secrets.VERBANODE_KEY_ALIAS }}
           VN_KEY_PASSWORD: ${{ secrets.VERBANODE_KEY_PASSWORD }}
-        run: gradle --no-daemon testDebugUnitTest assembleRelease
+        run: gradle --no-daemon lintDebug testDebugUnitTest assembleRelease
       - uses: actions/upload-artifact@v4
         with:
-          name: VerbaNode-Android-v0.3.8-release-apk
+          name: VerbaNode-Android-v0.4.1-release-apk
           path: app/build/outputs/apk/release/app-release.apk

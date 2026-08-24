@@ -1,15 +1,18 @@
-# VerbaNode Android v0.3.8 — Phase 1 Build Compatibility Fix
+# VerbaNode Android v0.4.1 — Phase 3 Build Integration Fix
 
-## Fixed
+## Build fix
 
-- Fixes `compileDebugKotlin` failures in `VerbaNodeApi.kt` caused by use of kotlinx.coroutines internal APIs (`tryResume`, `tryResumeWithException`, and `completeResume`).
-- The cancellable browser-PTT request now completes via the stable public Kotlin `Continuation.resumeWith(Result)` API while `invokeOnCancellation` continues to cancel the underlying OkHttp call.
-- Retains all Phase 1 networking/PTT lifecycle hardening introduced in v0.3.7.
+- Fixed the Agent editor save path to read the existing agent ID from `JSONObject` with `optInt("id")` instead of the typed-model `.id` accessor.
+- Corrected the release packaging strategy so the changed-files ZIP is cumulative from v0.3.8 and includes the Phase 2 transport/streaming dependencies required by the Phase 3 ViewModel. This prevents `ConnectionState`, WebSocket callback, streaming upload/download, and file-export signature mismatches when applying changed files over an older checkout.
 
-## Build note
+## Phase 3 retained
 
-Warnings that Gradle cannot strip `libandroidx.graphics.path.so` or `libdatastore_shared_counter.so` are non-fatal Android packaging warnings and are unrelated to the Kotlin compilation error fixed here.
+- Type to Talk remains available directly from the Home dashboard.
+- Home feature cards remain equal height with one-line title/description truncation.
+- `UiState`, `ManagementRepository`, typed management models, and formatting helpers remain separated from `AppViewModel`.
+- Phase 1/2 WebSocket, PTT, protocol-error, concurrent-operation, and streaming-transfer hardening remains intact.
 
 ## Compatibility
 
-The client remains API-compatible with VerbaNode Core v0.9.2+, with **Core v0.9.7 recommended** for the coordinated host-PTT/WebSocket disconnect safety fix and structured unexpected-error diagnostics.
+- Recommended with VerbaNode Core v0.9.9.
+- No Core change is required for this Android build correction.

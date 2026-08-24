@@ -28,12 +28,12 @@ import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.MainActivity
-import org.json.JSONObject
+import com.verbanode.mobile.network.AudioLibraryItem
 
 @Composable
 internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
-    var renameTarget by remember { mutableStateOf<JSONObject?>(null) }
+    var renameTarget by remember { mutableStateOf<AudioLibraryItem?>(null) }
     ManagementScaffold(viewModel, "Audio Library", AppScreen.AUDIO) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
@@ -55,21 +55,21 @@ internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity)
             if (state.audioLibraryItems.isEmpty()) item {
                 Text("No uploaded audio yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            items(state.audioLibraryItems, key = { it.optString("name") }) { item ->
-                val name = item.optString("name")
-                val playing = state.audioLibraryPlaying == name || item.optBoolean("playing")
+            items(state.audioLibraryItems, key = { it.name }) { item ->
+                val name = item.name
+                val playing = state.audioLibraryPlaying == name || item.playing
                 Card(
                     Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = if (playing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
                 ) {
                     Column(Modifier.padding(14.dp)) {
                         Text(name, fontWeight = FontWeight.Bold)
-                        val duration = item.optDouble("duration_seconds", -1.0)
-                        val sizeKb = item.optLong("size_bytes", 0L) / 1024L
+                        val duration = item.durationSeconds
+                        val sizeKb = item.sizeBytes / 1024L
                         Text(
                             buildString {
                                 append("${sizeKb} KB")
-                                if (duration >= 0) append(" · ${"%.1f".format(duration)} sec")
+                                if (duration != null) append(" · ${"%.1f".format(duration)} sec")
                                 if (playing) append(" · PLAYING")
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -86,14 +86,14 @@ internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity)
         }
     }
     renameTarget?.let { item ->
-        var value by remember(item) { mutableStateOf(item.optString("name")) }
+        var value by remember(item) { mutableStateOf(item.name) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { renameTarget = null },
             title = { Text("Rename audio") },
             text = { OutlinedTextField(value, { value = it }, label = { Text("Filename") }, modifier = Modifier.fillMaxWidth()) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
-                    val old = item.optString("name")
+                    val old = item.name
                     val newName = value.trim()
                     if (newName.isNotBlank()) { renameTarget = null; viewModel.renameAudio(old, newName) }
                 }) { Text("Rename") }

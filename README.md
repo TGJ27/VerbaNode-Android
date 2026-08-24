@@ -2,8 +2,8 @@
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.3.8  
-**Required Core:** VerbaNode v0.9.2+  
+**Current version:** v0.4.1  
+**Required Core:** VerbaNode v0.9.2+ (v0.9.9 recommended)  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
@@ -91,6 +91,34 @@ VerbaNode Android
 ```
 
 Core remains authoritative for AI, audio, plugins, database, device credentials and all management state. The Android app is a client; it does not duplicate backend logic.
+
+### v0.4.1 Phase 3 build integration fix
+
+- Fixes the Phase 3 Agent editor compile error introduced by typed model cleanup.
+- Ships a cumulative changed-files package containing the Phase 2 transport/streaming files required by the Phase 3 ViewModel, preventing partial-overlay builds from mixing old and new APIs.
+- Keeps the v0.4.0 Home Type to Talk shortcut, equal-height one-line cards, typed management models, repository split, and all Phase 1/2 stability hardening.
+
+### v0.4.0 Phase 3 structural cleanup and Home quick access
+
+- Adds **Type to Talk** directly to the Home dashboard for one-tap direct-speech access.
+- Home/management feature cards now use a fixed height and single-line descriptions with ellipsis, so cards stay aligned regardless of copy length.
+- Moves `AppScreen` and `MobileUiState` out of the large `AppViewModel` into a dedicated UI-state module.
+- Adds a `ManagementRepository` read-side boundary so blocking Core snapshot loading, JSON normalization, and protocol-to-model conversion no longer live inside `AppViewModel`.
+- Introduces typed Kotlin models for scripts, script queue items, Type-to-Talk queue items, and Audio Library items instead of passing mutable raw `JSONObject` instances through those high-interaction UI flows.
+- Moves status/error formatting out of `AppViewModel` into independently testable UI-formatting helpers.
+- Adds Phase 3 unit coverage for typed parsers, queue identity, nullable audio duration, and status formatting.
+- Coordinated with Core v0.9.9, which centralizes the canonical database schema and runtime repair contract without changing schema version 10.
+
+### v0.3.9 Phase 2 state and network hardening
+
+- Replaces the race-prone single `busy` boolean with tracked concurrent operations so one request finishing cannot mark the whole UI idle while another request is still running.
+- Adds explicit `DISCONNECTED`, `CONNECTING`, `CONNECTED`, and `RECONNECTING` transport states while preserving the existing connected UI behavior.
+- WebSocket protocol/JSON errors are surfaced to the UI and trigger a bootstrap resync instead of being silently discarded.
+- Successful HTTP responses with malformed JSON now raise a protocol error instead of silently becoming empty objects/arrays.
+- Streams Audio Library uploads and backup restores from the Android document provider rather than loading the whole file into RAM.
+- Streams backup and diagnostics downloads into temporary files before handing them to Android's document saver, avoiding large `ByteArray` allocations.
+- GitHub CI and release workflows now run `lintDebug` in addition to unit tests and APK builds.
+- Coordinated with Core v0.9.8, which fixes Audio Library delete/rename/play for collision/legacy filenames such as `clip (2).mp3`.
 
 ### v0.3.8 Phase 1 build compatibility fix
 

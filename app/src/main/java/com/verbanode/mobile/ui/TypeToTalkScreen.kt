@@ -206,8 +206,8 @@ internal fun TypeToTalkScreen(viewModel: AppViewModel) {
                     if (state.typeToTalkItems.isEmpty()) item {
                         Text("Nothing queued yet. Type below and press Send.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
                     }
-                    itemsIndexed(state.typeToTalkItems, key = { _, item -> item.optInt("id") }) { index, item ->
-                        val id = item.optInt("id")
+                    itemsIndexed(state.typeToTalkItems, key = { _, item -> item.id }) { index, item ->
+                        val id = item.id
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             Card(
                                 modifier = Modifier.fillMaxWidth(0.86f),
@@ -215,9 +215,9 @@ internal fun TypeToTalkScreen(viewModel: AppViewModel) {
                                 shape = RoundedCornerShape(16.dp),
                             ) {
                                 Column(Modifier.padding(12.dp)) {
-                                    Text(item.optString("text"), style = MaterialTheme.typography.bodyMedium)
+                                    Text(item.text, style = MaterialTheme.typography.bodyMedium)
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(if (item.optString("status") == "playing") "Speaking now" else "Queued ${index + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(if (item.status == "playing") "Speaking now" else "Queued ${index + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         Spacer(Modifier.weight(1f))
                                         TextButton(onClick = { viewModel.removeTypeToTalk(id) }) { Text("Remove") }
                                     }

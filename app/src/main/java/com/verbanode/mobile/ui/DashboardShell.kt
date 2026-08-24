@@ -81,6 +81,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
@@ -200,19 +201,25 @@ internal fun DashboardScreen(viewModel: AppViewModel) {
             item {
                 FeatureRow(
                     Feature(Icons.AutoMirrored.Outlined.Chat, "Chat", "Talk with your AI", viewModel::openChat),
+                    Feature(Icons.Outlined.Mic, "Type to Talk", "Quick direct speech", viewModel::openTypeToTalk),
+                )
+            }
+            item {
+                FeatureRow(
                     Feature(Icons.Outlined.Person, "Agents", "Manage AI agents", viewModel::openAgents),
-                )
-            }
-            item {
-                FeatureRow(
                     Feature(Icons.Outlined.Extension, "Plugins", "Extend capabilities", viewModel::openPlugins),
-                    Feature(Icons.Outlined.Description, "Scripts", "Scripts and queue", viewModel::openScripts),
                 )
             }
             item {
                 FeatureRow(
-                    Feature(Icons.Outlined.GraphicEq, "Audio", "Multi-format audio library", viewModel::openAudio),
+                    Feature(Icons.Outlined.Description, "Scripts", "Scripts and queue", viewModel::openScripts),
+                    Feature(Icons.Outlined.GraphicEq, "Audio", "Host audio library", viewModel::openAudio),
+                )
+            }
+            item {
+                FeatureRow(
                     Feature(Icons.Outlined.MonitorHeart, "Diagnostics", "System health", viewModel::openDiagnostics),
+                    null,
                 )
             }
         }
@@ -222,17 +229,21 @@ internal fun DashboardScreen(viewModel: AppViewModel) {
 private data class Feature(val icon: ImageVector, val title: String, val subtitle: String, val action: () -> Unit)
 
 @Composable
-private fun FeatureRow(first: Feature, second: Feature) {
+private fun FeatureRow(first: Feature, second: Feature?) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         FeatureCard(first, Modifier.weight(1f))
-        FeatureCard(second, Modifier.weight(1f))
+        if (second != null) {
+            FeatureCard(second, Modifier.weight(1f))
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 
 @Composable
 private fun FeatureCard(feature: Feature, modifier: Modifier) {
     Card(
-        modifier = modifier.clickable(onClick = feature.action),
+        modifier = modifier.height(126.dp).clickable(onClick = feature.action),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(18.dp),
     ) {
@@ -244,8 +255,21 @@ private fun FeatureCard(feature: Feature, modifier: Modifier) {
                 Spacer(Modifier.weight(1f))
                 Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(feature.title, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-            Text(feature.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+            Text(
+                feature.title,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            Text(
+                feature.subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 3.dp),
+            )
         }
     }
 }
