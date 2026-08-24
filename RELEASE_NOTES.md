@@ -1,12 +1,15 @@
-# VerbaNode Android v0.3.6 — Type to Talk 500 Fix
+# VerbaNode Android v0.3.8 — Phase 1 Build Compatibility Fix
 
 ## Fixed
 
-- Type to Talk no longer depends on `/api/configuration-options` just to open the screen.
-- Edge voice choices are loaded directly from Core via `/api/tts/edge-voices`.
-- A failure while loading the Edge voice catalogue is isolated and will not prevent Type to Talk from opening.
-- Language and TTS mode selectors now have built-in fallback choices, so the screen remains usable even if auxiliary configuration metadata is unavailable.
+- Fixes `compileDebugKotlin` failures in `VerbaNodeApi.kt` caused by use of kotlinx.coroutines internal APIs (`tryResume`, `tryResumeWithException`, and `completeResume`).
+- The cancellable browser-PTT request now completes via the stable public Kotlin `Continuation.resumeWith(Result)` API while `invokeOnCancellation` continues to cancel the underlying OkHttp call.
+- Retains all Phase 1 networking/PTT lifecycle hardening introduced in v0.3.7.
+
+## Build note
+
+Warnings that Gradle cannot strip `libandroidx.graphics.path.so` or `libdatastore_shared_counter.so` are non-fatal Android packaging warnings and are unrelated to the Kotlin compilation error fixed here.
 
 ## Compatibility
 
-- VerbaNode Core v0.9.2 remains compatible and does not require a code change for this Android fix.
+The client remains API-compatible with VerbaNode Core v0.9.2+, with **Core v0.9.7 recommended** for the coordinated host-PTT/WebSocket disconnect safety fix and structured unexpected-error diagnostics.

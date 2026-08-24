@@ -5,6 +5,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -18,27 +19,100 @@ class VerbaNodeWebSocket(
     private val onSessionLost: () -> Unit,
 ) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
+    private val stateLock = Any()
     private var socket: WebSocket? = null
     private var heartbeat: ScheduledFuture<*>? = null
+    private var reconnect: ScheduledFuture<*>? = null
+    private var connecting = false
     @Volatile private var closed = false
     private var reconnectAttempts = 0
 
+    /**
+     * Start (or resume) the transport without performing network I/O on the
+     * caller. In particular, /api/auth/ws-ticket is fetched on the dedicated
+     * transport executor rather than the Android main thread.
+     */
     fun connect() {
-        if (closed) return
+        scheduleConnect(0L)
+    }
+
+    private fun scheduleConnect(delayMs: Long) {
+        synchronized(stateLock) {
+            if (closed || connecting || reconnect?.isDone == false) return
+            reconnect = scheduler.schedule({ beginConnectAttempt() }, delayMs, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    private fun beginConnectAttempt() {
+        val shouldConnect = synchronized(stateLock) {
+            reconnect = null
+            if (closed || connecting) {
+                false
+            } else {
+                connecting = true
+                true
+            }
+        }
+        if (shouldConnect) openSocket()
+    }
+
+    private fun openSocket() {
+        if (closed) {
+            synchronized(stateLock) { connecting = false }
+            return
+        }
+        onState(false, "Connecting")
         try {
             val ticket = api.wsTicket(sessionToken)
-            val wsUrl = api.baseUrl.replaceFirst("https://", "wss://") + "/ws?ticket=" + java.net.URLEncoder.encode(ticket, "UTF-8")
+            if (closed) {
+                synchronized(stateLock) { connecting = false }
+                return
+            }
+            val wsUrl = api.baseUrl.replaceFirst("https://", "wss://") +
+                "/ws?ticket=" + URLEncoder.encode(ticket, "UTF-8")
             val request = Request.Builder().url(wsUrl).build()
-            socket = api.client.newWebSocket(request, listener)
+            val candidate = api.client.newWebSocket(request, listener)
+            val keep = synchronized(stateLock) {
+                if (closed) {
+                    connecting = false
+                    false
+                } else {
+                    socket = candidate
+                    true
+                }
+            }
+            if (!keep) candidate.cancel()
         } catch (error: Exception) {
-            onState(false, error.message ?: "WebSocket connection failed")
-            scheduleReconnect()
+            synchronized(stateLock) { connecting = false }
+            if (!closed) {
+                onState(false, error.message ?: "WebSocket connection failed")
+                if (error is ApiException && error.status == 401) {
+                    onSessionLost()
+                } else {
+                    scheduleReconnect()
+                }
+            }
         }
     }
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            reconnectAttempts = 0
+            val accepted = synchronized(stateLock) {
+                if (closed || (socket != null && socket !== webSocket)) {
+                    false
+                } else {
+                    socket = webSocket
+                    connecting = false
+                    reconnectAttempts = 0
+                    reconnect?.cancel(false)
+                    reconnect = null
+                    true
+                }
+            }
+            if (!accepted) {
+                webSocket.close(1000, "Superseded")
+                return
+            }
             onState(true, "Connected")
             startHeartbeat(webSocket)
         }
@@ -57,46 +131,65 @@ class VerbaNodeWebSocket(
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            heartbeat?.cancel(false)
-            heartbeat = null
+            if (!markDisconnected(webSocket)) return
+            if (closed) return
             onState(false, reason.ifBlank { "Disconnected" })
             if (code == 4401) onSessionLost() else scheduleReconnect()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            heartbeat?.cancel(false)
-            heartbeat = null
+            if (!markDisconnected(webSocket)) return
+            if (closed) return
             onState(false, t.message ?: "Connection lost")
             scheduleReconnect()
         }
     }
 
-    private fun startHeartbeat(webSocket: WebSocket) {
+    private fun markDisconnected(webSocket: WebSocket): Boolean = synchronized(stateLock) {
+        if (socket !== webSocket) return@synchronized false
+        socket = null
+        connecting = false
         heartbeat?.cancel(false)
-        heartbeat = scheduler.scheduleAtFixedRate({
-            if (!closed) {
-                val payload = JSONObject()
-                    .put("protocol", 1)
-                    .put("type", "command.heartbeat")
-                    .put("request_id", UUID.randomUUID().toString())
-                webSocket.send(payload.toString())
-            }
-        }, 10, 15, TimeUnit.SECONDS)
+        heartbeat = null
+        true
+    }
+
+    private fun startHeartbeat(webSocket: WebSocket) {
+        synchronized(stateLock) {
+            heartbeat?.cancel(false)
+            heartbeat = scheduler.scheduleAtFixedRate({
+                if (!closed && socket === webSocket) {
+                    val payload = JSONObject()
+                        .put("protocol", 1)
+                        .put("type", "command.heartbeat")
+                        .put("request_id", UUID.randomUUID().toString())
+                    webSocket.send(payload.toString())
+                }
+            }, 10, 15, TimeUnit.SECONDS)
+        }
     }
 
     private fun scheduleReconnect() {
-        if (closed) return
-        val attempt = reconnectAttempts++.coerceAtMost(5)
-        val delayMs = (500L shl attempt).coerceAtMost(10_000L)
-        scheduler.schedule({ if (!closed) connect() }, delayMs, TimeUnit.MILLISECONDS)
+        synchronized(stateLock) {
+            if (closed || connecting || reconnect?.isDone == false) return
+            val attempt = reconnectAttempts++.coerceAtMost(5)
+            val delayMs = (500L shl attempt).coerceAtMost(10_000L)
+            reconnect = scheduler.schedule({ beginConnectAttempt() }, delayMs, TimeUnit.MILLISECONDS)
+        }
     }
 
     fun close() {
-        closed = true
-        heartbeat?.cancel(false)
-        heartbeat = null
-        socket?.close(1000, "Client closed")
-        socket = null
+        val current = synchronized(stateLock) {
+            if (closed) return
+            closed = true
+            connecting = false
+            heartbeat?.cancel(false)
+            heartbeat = null
+            reconnect?.cancel(false)
+            reconnect = null
+            socket.also { socket = null }
+        }
+        current?.close(1000, "Client closed")
         scheduler.shutdownNow()
     }
 }

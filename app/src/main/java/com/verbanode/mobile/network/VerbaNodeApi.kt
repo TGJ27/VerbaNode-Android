@@ -2,15 +2,21 @@ package com.verbanode.mobile.network
 
 import android.os.Build
 import com.verbanode.mobile.BuildConfig
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 class VerbaNodeApi(
     val baseUrl: String,
@@ -56,8 +62,11 @@ class VerbaNodeApi(
         sessionToken: String? = null,
         json: JSONObject? = null,
         body: RequestBody? = null,
+        timeoutSeconds: Long? = null,
     ): String {
-        client.newCall(buildRequest(path, method, sessionToken, json, body)).execute().use { response ->
+        val call = client.newCall(buildRequest(path, method, sessionToken, json, body))
+        timeoutSeconds?.let { call.timeout().timeout(it, TimeUnit.SECONDS) }
+        call.execute().use { response ->
             val text = response.body.string()
             if (!response.isSuccessful) throw errorFrom(response.code, text)
             return text
@@ -83,6 +92,36 @@ class VerbaNodeApi(
     ): JSONArray {
         val text = requestText(path, method, sessionToken, json)
         return if (text.isBlank()) JSONArray() else runCatching { JSONArray(text) }.getOrElse { JSONArray() }
+    }
+
+    private suspend fun requestUnitCancellable(
+        path: String,
+        method: String,
+        sessionToken: String,
+        timeoutSeconds: Long,
+    ) {
+        suspendCancellableCoroutine<Unit> { continuation ->
+            val call = client.newCall(buildRequest(path, method, sessionToken))
+            call.timeout().timeout(timeoutSeconds, TimeUnit.SECONDS)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, error: IOException) {
+                    continuation.resumeWith(Result.failure(error))
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        response.use {
+                            val text = it.body.string()
+                            if (!it.isSuccessful) throw errorFrom(it.code, text)
+                        }
+                        continuation.resumeWith(Result.success(Unit))
+                    } catch (error: Exception) {
+                        continuation.resumeWith(Result.failure(error))
+                    }
+                }
+            })
+        }
     }
 
     private fun requestBytes(path: String, sessionToken: String): ByteArray {
@@ -170,8 +209,12 @@ class VerbaNodeApi(
 
     fun listConversations(sessionToken: String, agentId: Int): JSONArray = requestArray("/api/agents/$agentId/conversations", sessionToken = sessionToken)
 
-    fun startBrowserPtt(sessionToken: String) { request("/api/browser-ptt/start", method = "POST", sessionToken = sessionToken) }
-    fun cancelBrowserPtt(sessionToken: String) { request("/api/browser-ptt/cancel", method = "POST", sessionToken = sessionToken) }
+    suspend fun startBrowserPttCancellable(sessionToken: String) {
+        requestUnitCancellable("/api/browser-ptt/start", "POST", sessionToken, timeoutSeconds = 8)
+    }
+    fun cancelBrowserPtt(sessionToken: String) {
+        requestText("/api/browser-ptt/cancel", method = "POST", sessionToken = sessionToken, timeoutSeconds = 5)
+    }
     fun stopTts(sessionToken: String) { request("/api/tts/stop", method = "POST", sessionToken = sessionToken) }
 
     fun submitBrowserPtt(sessionToken: String, wav: ByteArray): JSONObject {
@@ -330,5 +373,13 @@ class VerbaNodeApi(
         "/api/queue/$queueId", "PATCH", sessionToken, JSONObject().put("pause_after_seconds", seconds),
     )
 
-    fun wsTicket(sessionToken: String): String = request("/api/auth/ws-ticket", method = "POST", sessionToken = sessionToken).getString("ticket")
+    fun wsTicket(sessionToken: String): String {
+        val text = requestText(
+            "/api/auth/ws-ticket",
+            method = "POST",
+            sessionToken = sessionToken,
+            timeoutSeconds = 8,
+        )
+        return JSONObject(text).getString("ticket")
+    }
 }

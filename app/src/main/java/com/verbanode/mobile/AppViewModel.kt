@@ -21,9 +21,11 @@ import com.verbanode.mobile.network.VerbaNodeWebSocket
 import com.verbanode.mobile.pairing.parsePairingLink
 import com.verbanode.mobile.storage.ProfileStore
 import com.verbanode.mobile.storage.ServerProfile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +33,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -96,6 +100,8 @@ data class MobileUiState(
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val DISCOVERY_WINDOW_MS = 6500L
+        private const val PTT_START_TIMEOUT_MS = 9000L
+        private const val PTT_START_GATE_TIMEOUT_MS = 10_000L
     }
 
     private val store = ProfileStore(application)
@@ -108,6 +114,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var discovery: LanDiscovery? = null
     private var discoveryStopJob: Job? = null
     private var pttStart: CompletableDeferred<Boolean>? = null
+    private var pttStartJob: Job? = null
 
     init {
         reloadProfiles()
@@ -487,7 +494,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun sessionLost(message: String) {
         webSocket?.close()
         webSocket = null
-        _ui.update { it.copy(session = null, connected = false, connectionLabel = "Disconnected", chatStatus = "Disconnected", screen = AppScreen.LOGIN, conversationActive = false, notice = message) }
+        recorder.cancel()
+        cancelPendingPttStart()
+        _ui.update { it.copy(session = null, connected = false, connectionLabel = "Disconnected", chatStatus = "Disconnected", screen = AppScreen.LOGIN, conversationActive = false, recording = false, notice = message) }
     }
 
     fun selectAgent(agentId: Int) = runBusy {
@@ -568,6 +577,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copy(messages = messages) }
     }
 
+    private fun cancelPendingPttStart() {
+        pttStartJob?.cancel()
+        pttStartJob = null
+        pttStart?.let { if (!it.isCompleted) it.complete(false) }
+        pttStart = null
+    }
+
     fun startPtt() {
         if (!_ui.value.connected || _ui.value.session == null) {
             _ui.update { it.copy(error = "VerbaNode is not connected") }
@@ -576,6 +592,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (recorder.isRecording()) return
         val localApi = api ?: return
         val token = _ui.value.session?.token ?: return
+        cancelPendingPttStart()
         val started = CompletableDeferred<Boolean>()
         pttStart = started
         try {
@@ -586,10 +603,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _ui.update { it.copy(error = friendlyError(error), recording = false) }
             return
         }
-        viewModelScope.launch {
+        pttStartJob = viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) { localApi.startBrowserPtt(token) }
+                withTimeout(PTT_START_TIMEOUT_MS) { localApi.startBrowserPttCancellable(token) }
                 if (!started.isCompleted) started.complete(true)
+            } catch (error: TimeoutCancellationException) {
+                if (!started.isCompleted) started.complete(false)
+                recorder.cancel()
+                _ui.update {
+                    it.copy(
+                        error = "PTT start timed out. Check the connection and try again.",
+                        recording = false,
+                        chatStatus = modeStatusLabel(it.mode),
+                    )
+                }
+                runCatching { withContext(Dispatchers.IO) { localApi.cancelBrowserPtt(token) } }
+            } catch (error: CancellationException) {
+                if (!started.isCompleted) started.complete(false)
+                throw error
             } catch (error: Exception) {
                 if (!started.isCompleted) started.complete(false)
                 recorder.cancel()
@@ -603,22 +634,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (!recorder.isRecording()) return
         val wav = recorder.stop()
         val startGate = pttStart
+        val startJob = pttStartJob
         pttStart = null
         _ui.update { it.copy(recording = false, busy = true, chatStatus = "Transcribing") }
         viewModelScope.launch {
             try {
                 val localApi = api ?: return@launch
                 val token = _ui.value.session?.token ?: return@launch
-                val ready = startGate?.await() ?: false
+                val ready = if (startGate == null) {
+                    false
+                } else {
+                    withTimeoutOrNull(PTT_START_GATE_TIMEOUT_MS) { startGate.await() } ?: false
+                }
+                if (!ready) startJob?.cancel()
                 if (!ready || wav.size <= 44) {
                     withContext(Dispatchers.IO) { localApi.cancelBrowserPtt(token) }
+                    _ui.update { it.copy(chatStatus = modeStatusLabel(it.mode)) }
                 } else {
                     withContext(Dispatchers.IO) { localApi.submitBrowserPtt(token, wav) }
                     refreshConversationInternal()
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                _ui.update { it.copy(error = friendlyError(error)) }
+                _ui.update { it.copy(error = friendlyError(error), chatStatus = modeStatusLabel(it.mode)) }
             } finally {
+                if (pttStartJob === startJob) pttStartJob = null
                 _ui.update { it.copy(busy = false) }
             }
         }
@@ -626,8 +667,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelPtt() {
         recorder.cancel()
-        pttStart?.let { if (!it.isCompleted) it.complete(false) }
-        pttStart = null
+        cancelPendingPttStart()
         _ui.update { it.copy(recording = false, chatStatus = modeStatusLabel(it.mode)) }
         val localApi = api ?: return
         val token = _ui.value.session?.token ?: return
@@ -1019,8 +1059,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val token = _ui.value.session?.token
         webSocket?.close(); webSocket = null
         recorder.cancel()
-        if (localApi != null && token != null) viewModelScope.launch(Dispatchers.IO) { runCatching { localApi.logout(token) } }
-        _ui.update { it.copy(session = null, connected = false, screen = AppScreen.LOGIN, messages = emptyList(), conversationActive = false) }
+        cancelPendingPttStart()
+        if (localApi != null && token != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { localApi.cancelBrowserPtt(token) }
+                runCatching { localApi.logout(token) }
+            }
+        }
+        _ui.update { it.copy(session = null, connected = false, screen = AppScreen.LOGIN, messages = emptyList(), conversationActive = false, recording = false) }
     }
 
     fun removeProfile(profile: ServerProfile) = viewModelScope.launch {
@@ -1030,16 +1076,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun goServers() {
+        val localApi = api
+        val token = _ui.value.session?.token
         webSocket?.close(); webSocket = null
         recorder.cancel()
+        cancelPendingPttStart()
+        if (localApi != null && token != null) {
+            viewModelScope.launch(Dispatchers.IO) { runCatching { localApi.cancelBrowserPtt(token) } }
+        }
         api = null
-        _ui.update { it.copy(screen = AppScreen.SERVERS, session = null, currentProfile = null, connected = false, conversationActive = false) }
+        _ui.update { it.copy(screen = AppScreen.SERVERS, session = null, currentProfile = null, connected = false, conversationActive = false, recording = false) }
     }
 
     override fun onCleared() {
         stopDiscovery(clearResults = false)
         webSocket?.close()
         recorder.cancel()
+        cancelPendingPttStart()
         super.onCleared()
     }
 }

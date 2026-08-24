@@ -2,7 +2,7 @@
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.3.6  
+**Current version:** v0.3.8  
 **Required Core:** VerbaNode v0.9.2+  
 **Transport:** local-network HTTPS/WSS only
 
@@ -91,6 +91,21 @@ VerbaNode Android
 ```
 
 Core remains authoritative for AI, audio, plugins, database, device credentials and all management state. The Android app is a client; it does not duplicate backend logic.
+
+### v0.3.8 Phase 1 build compatibility fix
+
+- Replaces internal `CancellableContinuation.tryResume*` / `completeResume` calls in the cancellable browser-PTT HTTP wrapper with the stable public `Continuation.resumeWith(Result)` API.
+- Fixes the Kotlin compile failure reported with kotlinx-coroutines 1.10.2 while preserving cancellation of the underlying OkHttp call and the Phase 1 PTT timeout behavior.
+- Native debug-symbol strip warnings for `libandroidx.graphics.path.so` and `libdatastore_shared_counter.so` are packaging warnings, not build failures.
+
+### v0.3.7 Phase 1 stability hardening
+
+- Moves WebSocket ticket acquisition and connection setup off the Android main thread so reconnect/login transport work cannot freeze the UI.
+- Makes WebSocket reconnect scheduling single-flight and ignores stale socket callbacks; authentication loss stops reconnecting and returns to login.
+- Adds a cancellable, bounded browser-PTT start request plus a bounded release wait so PTT cannot wait indefinitely on a stalled network request.
+- Cancels in-flight PTT startup when PTT is aborted, the controller session is lost, the user logs out, or the user switches servers.
+- Explicitly sends `/api/browser-ptt/cancel` before logout/server departure cleanup so Core is not left in browser-PTT mode.
+- Coordinated with VerbaNode Core v0.9.7 host-PTT/WebSocket hardening.
 
 ### v0.3.6 Type to Talk 500 fix
 
