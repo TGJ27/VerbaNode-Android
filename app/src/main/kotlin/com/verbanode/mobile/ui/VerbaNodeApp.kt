@@ -89,7 +89,7 @@ fun VerbaNodeApp(viewModel: AppViewModel, activity: MainActivity) {
             AppScreen.CHAT -> ChatScreen(viewModel, activity)
             AppScreen.AGENTS -> AgentsScreen(viewModel, activity)
             AppScreen.MORE -> MoreScreen(viewModel)
-            AppScreen.INFORMATION -> InformationScreen(viewModel)
+            AppScreen.KNOWLEDGE -> KnowledgeScreen(viewModel, activity)
             AppScreen.SCRIPTS -> ScriptsScreen(viewModel)
             AppScreen.AUDIO -> AudioLibraryScreen(viewModel, activity)
             AppScreen.TYPE_TO_TALK -> TypeToTalkScreen(viewModel)

@@ -43,8 +43,6 @@ import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.MainActivity
-import com.verbanode.mobile.network.ScriptItem
-import com.verbanode.mobile.network.ScriptQueueItem
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -142,7 +140,7 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
         }
     }
     if (creating || editing != null) {
-        AgentEditorDialog(existing = editing, configurationOptions = state.configurationOptions, onDismiss = { creating = false; editing = null }) { id, payload ->
+        AgentEditorDialog(existing = editing, configurationOptions = state.configurationOptions, knowledgeLibraries = state.knowledgeLibraries, onDismiss = { creating = false; editing = null }) { id, payload ->
             creating = false; editing = null; viewModel.saveAgent(id, payload)
         }
     }
@@ -157,7 +155,7 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
 }
 
 @Composable
-private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
+private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONObject?, knowledgeLibraries: List<JSONObject>, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
     var name by remember(existing) { mutableStateOf(existing?.optString("name", "Ropi") ?: "Ropi") }
     var avatar by remember(existing) { mutableStateOf(existing?.optString("avatar", "RP") ?: "RP") }
     var color by remember(existing) { mutableStateOf(existing?.optString("color", "#3578f6") ?: "#3578f6") }
@@ -173,6 +171,12 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
     var topP by remember(existing) { mutableStateOf(existing?.optDouble("top_p", 0.9)?.toString() ?: "0.9") }
     var maxTokens by remember(existing) { mutableStateOf(existing?.optInt("max_tokens", 1024)?.toString() ?: "1024") }
     var contextSize by remember(existing) { mutableStateOf(existing?.optInt("context_size", 8192)?.toString() ?: "8192") }
+    var selectedKnowledgeIds by remember(existing, knowledgeLibraries) {
+        val initial = mutableSetOf<Int>()
+        val array = existing?.optJSONArray("knowledge_library_ids") ?: JSONArray()
+        for (index in 0 until array.length()) array.optInt(index).takeIf { it > 0 }?.let(initial::add)
+        mutableStateOf(initial.toSet())
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Create agent" else "Edit agent") },
@@ -213,6 +217,18 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
                         OutlinedTextField(contextSize, { contextSize = it.filter(Char::isDigit) }, label = { Text("Context") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
                     }
                 }
+                item { Text("Knowledge Libraries", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp)) }
+                if (knowledgeLibraries.isEmpty()) {
+                    item { Text("No Knowledge Libraries yet.", style = MaterialTheme.typography.bodySmall) }
+                } else {
+                    items(knowledgeLibraries, key = { "knowledge-${it.optInt("id")}" }) { library ->
+                        val libraryId = library.optInt("id")
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = libraryId in selectedKnowledgeIds, onCheckedChange = { checked -> selectedKnowledgeIds = if (checked) selectedKnowledgeIds + libraryId else selectedKnowledgeIds - libraryId })
+                            Column { Text(library.optString("name", "Knowledge"), fontWeight = FontWeight.SemiBold); Text("${library.optInt("document_count")} docs", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -225,6 +241,7 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
                     .put("edge_voice", edgeVoice).put("stt_model", sttModel)
                     .put("temperature", temperature.toDoubleOrNull() ?: 0.6).put("top_p", topP.toDoubleOrNull() ?: 0.9)
                     .put("max_tokens", maxTokens.toIntOrNull() ?: 1024).put("context_size", contextSize.toIntOrNull() ?: 8192)
+                    .put("knowledge_library_ids", JSONArray().apply { selectedKnowledgeIds.sorted().forEach { put(it) } })
                 onSave(existing?.optInt("id")?.takeIf { it > 0 }, payload)
             }) { Text("Save") }
         },
@@ -233,60 +250,162 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
 }
 
 @Composable
-internal fun InformationScreen(viewModel: AppViewModel) {
+internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
-    var editing by remember { mutableStateOf<JSONObject?>(null) }
-    var creating by remember { mutableStateOf(false) }
-    ManagementSubpage(viewModel, "Information") { padding ->
+    var editingLibrary by remember { mutableStateOf<JSONObject?>(null) }
+    var creatingLibrary by remember { mutableStateOf(false) }
+    var creatingText by remember { mutableStateOf(false) }
+    var editingText by remember { mutableStateOf<JSONObject?>(null) }
+    var query by remember { mutableStateOf("") }
+    val selectedLibrary = state.knowledgeLibraries.firstOrNull { it.optInt("id") == state.selectedKnowledgeLibraryId }
+    ManagementSubpage(viewModel, "Knowledge") { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { Feedback(viewModel) }
-            item { Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ Add information") } }
-            items(state.informationItems, key = { it.optInt("id") }) { item ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    Column(Modifier.padding(14.dp)) {
+            item {
+                val migration = state.knowledgeStatus?.optJSONObject("legacy_information_migration")
+                DashboardCard("Hybrid RAG", "Only relevant evidence is sent to the LLM") {
+                    Text("${state.knowledgeLibraries.size} libraries · ${state.knowledgeDocuments.size} documents in selected library", style = MaterialTheme.typography.bodySmall)
+                    val indexStatus = migration?.optString("index_status", "pending") ?: "pending"
+                    val completed = migration?.optInt("index_completed", 0) ?: 0
+                    val total = migration?.optInt("index_total", 0) ?: 0
+                    Text(if (indexStatus == "indexing") "Dense indexing in background: $completed/$total" else "Dense index: ${indexStatus.uppercase()}", style = MaterialTheme.typography.bodySmall)
+                    Text("BM25 remains available while dense indexing runs.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = { creatingLibrary = true }, modifier = Modifier.weight(1f)) { Text("＋ Library") }
+                    OutlinedButton(onClick = { creatingText = true }, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("＋ Text") }
+                    OutlinedButton(onClick = activity::chooseKnowledgeForUpload, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Upload") }
+                }
+            }
+            item { SectionTitle("Libraries") }
+            items(state.knowledgeLibraries, key = { "library-${it.optInt("id")}" }) { library ->
+                val selected = library.optInt("id") == state.selectedKnowledgeLibraryId
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(13.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(item.optString("title", "Information"), fontWeight = FontWeight.Bold)
-                                Text(if (item.optBoolean("enabled", true)) "Enabled" else "Disabled", style = MaterialTheme.typography.labelSmall)
+                                Text(library.optString("name", "Knowledge"), fontWeight = FontWeight.Bold)
+                                Text("${library.optInt("document_count")} documents · ${library.optInt("agent_count")} agents", style = MaterialTheme.typography.bodySmall)
                             }
-                            TextButton(onClick = { editing = item }) { Text("Edit") }
+                            if (selected) Pill("SELECTED")
                         }
-                        Text(item.optString("content"), style = MaterialTheme.typography.bodySmall, maxLines = 5)
-                        TextButton(onClick = { viewModel.deleteInformation(item.optInt("id")) }) { Text("Delete") }
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(onClick = { viewModel.selectKnowledgeLibrary(library.optInt("id")) }, modifier = Modifier.weight(1f)) { Text("Open") }
+                            OutlinedButton(onClick = { editingLibrary = library }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                            TextButton(onClick = { viewModel.deleteKnowledgeLibrary(library.optInt("id")) }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+            item { SectionTitle(selectedLibrary?.optString("name") ?: "Documents") }
+            if (selectedLibrary == null) item { Text("Create or select a Knowledge Library first.") }
+            items(state.knowledgeDocuments, key = { "doc-${it.optInt("id")}" }) { document ->
+                val sourceType = document.optString("source_type")
+                val editable = sourceType in listOf("manual_text", "legacy_information", "packaged_default")
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(13.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(document.optString("title", "Document"), fontWeight = FontWeight.Bold)
+                                Text("$sourceType · ${document.optString("status", "registered")}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            TextButton(onClick = { viewModel.loadKnowledgeDocument(document.optInt("id")) }) { Text("Inspect") }
+                        }
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (editable) OutlinedButton(onClick = { viewModel.loadKnowledgeDocument(document.optInt("id")); editingText = document }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                            OutlinedButton(onClick = { viewModel.reindexKnowledgeDocument(document.optInt("id")) }, modifier = Modifier.weight(1f)) { Text("Reindex") }
+                            TextButton(onClick = { viewModel.deleteKnowledgeDocument(document.optInt("id")) }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+            item {
+                DashboardCard("Retrieval test", "Inspect what this library returns before Chat uses it") {
+                    OutlinedTextField(query, { query = it }, label = { Text("Question") }, modifier = Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(onClick = { if (query.isNotBlank()) viewModel.searchKnowledge(query) }, modifier = Modifier.weight(1f)) { Text("Search") }
+                        OutlinedButton(onClick = viewModel::rebuildKnowledgeIndex, modifier = Modifier.weight(1f)) { Text("Rebuild") }
+                    }
+                    state.knowledgeSearchResult?.let { result ->
+                        val confidence = result.optJSONObject("confidence")
+                        Text("Confidence: ${confidence?.optString("label", "none")} · ${"%.3f".format(confidence?.optDouble("score", 0.0) ?: 0.0)}", modifier = Modifier.padding(top = 8.dp), fontWeight = FontWeight.SemiBold)
+                        val results = result.optJSONArray("results") ?: JSONArray()
+                        for (index in 0 until minOf(4, results.length())) {
+                            val hit = results.optJSONObject(index) ?: continue
+                            Text("K${index + 1} · ${hit.optString("document_title", hit.optString("source_name", "Knowledge"))}${hit.optString("heading_path").takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
         }
     }
-    if (creating || editing != null) {
-        InfoDialog(editing, { creating = false; editing = null }) { id, title, content, enabled ->
-            creating = false; editing = null; viewModel.saveInformation(id, title, content, enabled)
+    if (creatingLibrary || editingLibrary != null) {
+        KnowledgeLibraryDialog(editingLibrary, { creatingLibrary = false; editingLibrary = null }) { id, name, description, enabled ->
+            creatingLibrary = false; editingLibrary = null; viewModel.saveKnowledgeLibrary(id, name, description, enabled)
         }
+    }
+    if (creatingText || editingText != null) {
+        KnowledgeTextDialog(editingText, state.knowledgeDocumentContent, { creatingText = false; editingText = null; viewModel.clearKnowledgeDocument() }) { id, title, text ->
+            creatingText = false; editingText = null; viewModel.saveKnowledgeText(id, title, text)
+        }
+    }
+    state.knowledgeDocumentContent?.takeIf { editingText == null }?.let { content ->
+        KnowledgeInspectDialog(content, onDismiss = viewModel::clearKnowledgeDocument)
     }
 }
 
 @Composable
-private fun InfoDialog(existing: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, String, String, Boolean) -> Unit) {
-    var title by remember(existing) { mutableStateOf(existing?.optString("title") ?: "") }
-    var content by remember(existing) { mutableStateOf(existing?.optString("content") ?: "") }
+private fun KnowledgeLibraryDialog(existing: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, String, String, Boolean) -> Unit) {
+    var name by remember(existing) { mutableStateOf(existing?.optString("name") ?: "") }
+    var description by remember(existing) { mutableStateOf(existing?.optString("description") ?: "") }
     var enabled by remember(existing) { mutableStateOf(existing?.optBoolean("enabled", true) ?: true) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Add information" else "Edit information") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(title, { title = it.take(120) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(content, { content = it }, label = { Text("Content") }, minLines = 6, modifier = Modifier.fillMaxWidth())
-            Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(enabled, { enabled = it }); Text("Enabled") }
-        } },
-        confirmButton = { TextButton(onClick = { if (title.isNotBlank() && content.isNotBlank()) onSave(existing?.optInt("id")?.takeIf { it > 0 }, title, content, enabled) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Create library" else "Edit library") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(name, { name = it.take(120) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(description, { description = it.take(4000) }, label = { Text("Description") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(enabled, { enabled = it }); Text("Enabled for retrieval") }
+        }
+    }, confirmButton = { TextButton(onClick = { if (name.isNotBlank()) onSave(existing?.optInt("id")?.takeIf { it > 0 }, name, description, enabled) }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+}
+
+@Composable
+private fun KnowledgeTextDialog(existing: JSONObject?, content: JSONObject?, onDismiss: () -> Unit, onSave: (Int?, String, String) -> Unit) {
+    var title by remember(existing) { mutableStateOf(existing?.optString("title") ?: "") }
+    val existingText = remember(content) {
+        val blocks = content?.optJSONArray("parent_blocks") ?: JSONArray()
+        buildString { for (index in 0 until blocks.length()) { val text = blocks.optJSONObject(index)?.optString("text").orEmpty(); if (text.isNotBlank()) { if (isNotEmpty()) append("\n\n"); append(text) } } }
+    }
+    var text by remember(existing, existingText) { mutableStateOf(existingText) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Add knowledge text" else "Edit knowledge text") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(title, { title = it.take(240) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(text, { text = it }, label = { Text("Knowledge") }, minLines = 8, modifier = Modifier.fillMaxWidth())
+            Text("This text is retrieved only when relevant.", style = MaterialTheme.typography.labelSmall)
+        }
+    }, confirmButton = { TextButton(onClick = { if (title.isNotBlank() && text.isNotBlank()) onSave(existing?.optInt("id")?.takeIf { it > 0 }, title, text) }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+}
+
+@Composable
+private fun KnowledgeInspectDialog(content: JSONObject, onDismiss: () -> Unit) {
+    val document = content.optJSONObject("document") ?: JSONObject()
+    val chunks = content.optJSONArray("chunks") ?: JSONArray()
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(document.optString("title", "Knowledge document")) }, text = {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { Text("${document.optString("source_type")} · ${chunks.length()} chunks", style = MaterialTheme.typography.bodySmall) }
+            items(minOf(chunks.length(), 12)) { index ->
+                val chunk = chunks.optJSONObject(index) ?: JSONObject()
+                Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp)) { Text("Chunk ${index + 1}", fontWeight = FontWeight.Bold); Text(chunk.optString("heading_path"), style = MaterialTheme.typography.labelSmall); Text(chunk.optString("text"), style = MaterialTheme.typography.bodySmall, maxLines = 8) } }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } })
 }
 
 @Composable
 internal fun ScriptsScreen(viewModel: AppViewModel) {
     val state by viewModel.ui.collectAsState()
-    var editing by remember { mutableStateOf<ScriptItem?>(null) }
+    var editing by remember { mutableStateOf<JSONObject?>(null) }
     var creating by remember { mutableStateOf(false) }
     ManagementScaffold(viewModel, "Scripts & Queue", AppScreen.SCRIPTS) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -314,23 +433,23 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
                 }
             }
             item { SectionTitle("Scripts") }
-            items(state.scriptItems, key = { it.id }) { script ->
+            items(state.scriptItems, key = { it.optInt("id") }) { script ->
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(script.title, fontWeight = FontWeight.Bold)
-                                Text("${script.language} · ${script.ttsMode}", style = MaterialTheme.typography.bodySmall)
+                                Text(script.optString("title", "Script"), fontWeight = FontWeight.Bold)
+                                Text("${script.optString("language", "en")} · ${script.optString("tts_mode", "edge")}", style = MaterialTheme.typography.bodySmall)
                             }
-                            if (!script.enabled) Pill("DISABLED")
+                            if (!script.optBoolean("enabled", true)) Pill("DISABLED")
                         }
-                        Text(script.text, style = MaterialTheme.typography.bodySmall, maxLines = 4, modifier = Modifier.padding(top = 8.dp))
+                        Text(script.optString("text"), style = MaterialTheme.typography.bodySmall, maxLines = 4, modifier = Modifier.padding(top = 8.dp))
                         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(onClick = { viewModel.runScriptNow(script.id) }, enabled = script.enabled, modifier = Modifier.weight(1f)) { Text("Run") }
-                            OutlinedButton(onClick = { viewModel.queueScript(script.id) }, enabled = script.enabled, modifier = Modifier.weight(1f)) { Text("Queue") }
+                            Button(onClick = { viewModel.runScriptNow(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Run") }
+                            OutlinedButton(onClick = { viewModel.queueScript(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Queue") }
                             OutlinedButton(onClick = { editing = script }, modifier = Modifier.weight(1f)) { Text("Edit") }
                         }
-                        TextButton(onClick = { viewModel.deleteScript(script.id) }) { Text("Delete") }
+                        TextButton(onClick = { viewModel.deleteScript(script.optInt("id")) }) { Text("Delete") }
                     }
                 }
             }
@@ -344,11 +463,11 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
 }
 
 @Composable
-private fun QueueItemRow(viewModel: AppViewModel, item: ScriptQueueItem) {
-    val id = item.id
+private fun QueueItemRow(viewModel: AppViewModel, item: JSONObject) {
+    val id = item.optInt("id")
     var dragOffset by remember(id) { mutableStateOf(0f) }
-    var pauseText by remember(id, item.pauseAfterSeconds) {
-        mutableStateOf(item.pauseAfterSeconds.toString().removeSuffix(".0"))
+    var pauseText by remember(id, item.optDouble("pause_after_seconds", 0.0)) {
+        mutableStateOf(item.optDouble("pause_after_seconds", 0.0).toString().removeSuffix(".0"))
     }
     val threshold = with(LocalDensity.current) { 46.dp.toPx() }
     Column(Modifier.fillMaxWidth()) {
@@ -369,7 +488,7 @@ private fun QueueItemRow(viewModel: AppViewModel, item: ScriptQueueItem) {
                 fontWeight = FontWeight.Bold,
             )
             Column(Modifier.weight(1f)) {
-                Text(item.title, fontWeight = FontWeight.SemiBold)
+                Text(item.optString("title", item.optString("script_title", "Queued script")), fontWeight = FontWeight.SemiBold)
                 Text("Long-press and drag ☰ to reorder", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TextButton(onClick = { viewModel.removeQueueItem(id) }) { Text("Remove") }
@@ -390,17 +509,17 @@ private fun QueueItemRow(viewModel: AppViewModel, item: ScriptQueueItem) {
 
 @Composable
 private fun ScriptDialog(
-    existing: ScriptItem?,
+    existing: JSONObject?,
     rememberedDefaults: JSONObject?,
     configurationOptions: JSONObject?,
     onDismiss: () -> Unit,
     onSave: (Int?, JSONObject) -> Unit,
 ) {
-    val source = existing?.toJson() ?: rememberedDefaults ?: JSONObject()
-    val stateKey = "${existing?.id ?: 0}:${source}"
-    var title by remember(stateKey) { mutableStateOf(existing?.title ?: "") }
-    var text by remember(stateKey) { mutableStateOf(existing?.text ?: "") }
-    var enabled by remember(stateKey) { mutableStateOf(existing?.enabled ?: true) }
+    val source = existing ?: rememberedDefaults ?: JSONObject()
+    val stateKey = "${existing?.optInt("id", 0) ?: 0}:${source.toString()}"
+    var title by remember(stateKey) { mutableStateOf(existing?.optString("title") ?: "") }
+    var text by remember(stateKey) { mutableStateOf(existing?.optString("text") ?: "") }
+    var enabled by remember(stateKey) { mutableStateOf(existing?.optBoolean("enabled", true) ?: true) }
     var language by remember(stateKey) { mutableStateOf(source.optString("language", "en")) }
     var ttsMode by remember(stateKey) { mutableStateOf(source.optString("tts_mode", "edge")) }
     var edgeVoice by remember(stateKey) { mutableStateOf(source.optString("edge_voice", "en-US-AriaNeural")) }
@@ -496,7 +615,7 @@ private fun ScriptDialog(
                     .put("kokoro_voice_id", kokoroId.toIntOrNull() ?: 0)
                     .put("tts_rate", (rate.toDoubleOrNull() ?: 1.0).coerceIn(0.5, 2.0))
                     .put("tts_volume", (volume.toDoubleOrNull() ?: 1.0).coerceIn(0.0, 1.0))
-                onSave(existing?.id?.takeIf { it > 0 }, payload)
+                onSave(existing?.optInt("id")?.takeIf { it > 0 }, payload)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

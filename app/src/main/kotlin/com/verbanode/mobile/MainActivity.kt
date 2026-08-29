@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -15,52 +14,59 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import com.verbanode.mobile.ui.VerbaNodeApp
 import com.verbanode.mobile.ui.VerbaNodeTheme
-import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val viewModel: AppViewModel by viewModels()
     private var startDiscoveryAfterPermission = false
     private var pendingPairingLink: String? = null
     private var pendingDocumentBytes: ByteArray? = null
-    private var pendingDocumentFile: File? = null
     private val createDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val bytes = pendingDocumentBytes
-        val file = pendingDocumentFile
         pendingDocumentBytes = null
-        pendingDocumentFile = null
-        if (uri == null) {
-            file?.delete()
-            return@registerForActivityResult
+        if (uri != null && bytes != null) {
+            runCatching { contentResolver.openOutputStream(uri)?.use { it.write(bytes) } }
+                .onSuccess { Toast.makeText(this, "File saved", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(this, it.message ?: "Could not save file", Toast.LENGTH_LONG).show() }
         }
-        runCatching {
-            val output = contentResolver.openOutputStream(uri) ?: error("Could not open destination")
-            output.use { stream ->
-                when {
-                    file != null -> file.inputStream().use { it.copyTo(stream) }
-                    bytes != null -> stream.write(bytes)
-                    else -> error("No file is waiting to be saved")
-                }
-            }
-        }.onSuccess { Toast.makeText(this, "File saved", Toast.LENGTH_SHORT).show() }
-            .onFailure { Toast.makeText(this, it.message ?: "Could not save file", Toast.LENGTH_LONG).show() }
-        file?.delete()
     }
     private val openAudio = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
-                val (filename, size) = documentMetadata(uri, "audio.wav")
+                val filename = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                } ?: uri.lastPathSegment ?: "audio.wav"
                 val mime = contentResolver.getType(uri) ?: "audio/*"
-                viewModel.uploadAudio(uri, filename, mime, size)
-            }.onFailure { viewModel.reportError(it.message ?: "Could not open audio file") }
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not open audio file")
+                Triple(bytes, filename, mime)
+            }.onSuccess { (bytes, filename, mime) -> viewModel.uploadAudio(bytes, filename, mime) }
+                .onFailure { viewModel.reportError(it.message ?: "Could not read audio file") }
+        }
+    }
+
+    private val openKnowledge = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                var filename: String? = null
+                var size: Long? = null
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { filename = cursor.getString(it) }
+                        cursor.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { index -> if (!cursor.isNull(index)) size = cursor.getLong(index) }
+                    }
+                }
+                val resolvedName = filename ?: uri.lastPathSegment ?: "knowledge-document"
+                val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+                Triple(resolvedName, mime, size)
+            }.onSuccess { (filename, mime, size) -> viewModel.uploadKnowledgeDocument(uri, filename, mime, size) }
+                .onFailure { viewModel.reportError(it.message ?: "Could not read knowledge document") }
         }
     }
 
     private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching {
-                val (filename, size) = documentMetadata(uri, "verbanode-backup.zip")
-                viewModel.restoreBackup(uri, filename, size)
-            }.onFailure { viewModel.reportError(it.message ?: "Could not open backup") }
+            runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not open backup") }
+                .onSuccess { bytes -> viewModel.restoreBackup(bytes, uri.lastPathSegment ?: "verbanode-backup.zip") }
+                .onFailure { viewModel.reportError(it.message ?: "Could not read backup") }
         }
     }
 
@@ -94,21 +100,16 @@ class MainActivity : ComponentActivity() {
     }
 
     fun saveDocument(bytes: ByteArray, filename: String, mimeType: String = "application/octet-stream") {
-        pendingDocumentFile?.delete()
-        pendingDocumentFile = null
         pendingDocumentBytes = bytes
-        createDocument.launch(filename)
-    }
-
-    fun saveDocument(file: File, filename: String, mimeType: String = "application/octet-stream") {
-        pendingDocumentBytes = null
-        pendingDocumentFile?.delete()
-        pendingDocumentFile = file
         createDocument.launch(filename)
     }
 
     fun chooseAudioForUpload() {
         openAudio.launch(arrayOf("audio/*", "audio/mpeg", "video/mpeg", "application/ogg", "application/octet-stream"))
+    }
+
+    fun chooseKnowledgeForUpload() {
+        openKnowledge.launch(arrayOf("*/*"))
     }
 
     fun chooseBackupForRestore() {
@@ -136,26 +137,6 @@ class MainActivity : ComponentActivity() {
         } else if (startDiscovery) {
             viewModel.startDiscovery()
         }
-    }
-
-    private fun documentMetadata(uri: Uri, fallbackName: String): Pair<String, Long?> {
-        var name: String? = null
-        var size: Long? = null
-        contentResolver.query(
-            uri,
-            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-            null,
-            null,
-            null,
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
-                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
-            }
-        }
-        return (name ?: uri.lastPathSegment ?: fallbackName) to size
     }
 
     private fun handleIntent(intent: Intent?) {

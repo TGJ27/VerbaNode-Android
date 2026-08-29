@@ -11,8 +11,8 @@ android {
         applicationId = "com.verbanode.mobile"
         minSdk = 23
         targetSdk = 37
-        versionCode = 15
-        versionName = "0.4.1"
+        versionCode = 14
+        versionName = "0.4.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -49,6 +49,28 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+
+    // Canonical Kotlin source root.
+    // Older VerbaNode Android revisions used src/main/java for Kotlin. Explicitly
+    // compiling only src/main/kotlin prevents stale overlay files from older
+    // architectures from being mixed into current builds.
+    sourceSets.named("main") {
+        kotlin.directories.clear()
+        kotlin.directories.add("src/main/kotlin")
+    }
+
+    // Canonical test roots for overlay-safe builds. Older revisions left Kotlin
+    // unit/instrumentation tests under src/test/java and src/androidTest/java.
+    // Those stale tests target retired app contracts and must not be mixed with
+    // the current source generation when users apply changed-files overlays.
+    sourceSets.named("test") {
+        kotlin.directories.clear()
+        kotlin.directories.add("src/test/kotlin")
+    }
+    sourceSets.named("androidTest") {
+        kotlin.directories.clear()
+        kotlin.directories.add("src/androidTest/kotlin")
+    }
 }
 
 dependencies {
@@ -72,7 +94,6 @@ dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

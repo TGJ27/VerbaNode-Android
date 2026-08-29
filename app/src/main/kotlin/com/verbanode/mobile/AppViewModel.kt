@@ -10,12 +10,9 @@ import com.verbanode.mobile.discovery.LanDiscovery
 import com.verbanode.mobile.network.Agent
 import com.verbanode.mobile.network.ApiException
 import com.verbanode.mobile.network.AuthSession
-import com.verbanode.mobile.network.ApiSessionContext
 import com.verbanode.mobile.network.BootstrapData
 import com.verbanode.mobile.network.ChatMessage
 import com.verbanode.mobile.network.ClientInfo
-import com.verbanode.mobile.network.ConnectionState
-import com.verbanode.mobile.network.ManagementRepository
 import com.verbanode.mobile.network.ProbeResult
 import com.verbanode.mobile.network.requireAndroidCompatibility
 import com.verbanode.mobile.network.TlsTrust
@@ -25,11 +22,9 @@ import com.verbanode.mobile.network.VerbaNodeWebSocket
 import com.verbanode.mobile.pairing.parsePairingLink
 import com.verbanode.mobile.storage.ProfileStore
 import com.verbanode.mobile.storage.ServerProfile
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,68 +32,131 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
-import java.io.IOException
 import java.util.UUID
 
 
+enum class AppScreen {
+    SERVERS, TRUST, LOGIN,
+    HOME, CHAT, AGENTS, MORE, KNOWLEDGE, SCRIPTS, AUDIO, TYPE_TO_TALK, PLUGINS, SETTINGS,
+    DEVICES, DIAGNOSTICS, DATA, STATUS
+}
+
+data class MobileUiState(
+    val screen: AppScreen = AppScreen.SERVERS,
+    val profiles: List<ServerProfile> = emptyList(),
+    val discovered: List<DiscoveredServer> = emptyList(),
+    val discoveryActive: Boolean = false,
+    val currentProfile: ServerProfile? = null,
+    val trustCandidate: ProbeResult? = null,
+    val clientInfo: ClientInfo? = null,
+    val session: AuthSession? = null,
+    val connected: Boolean = false,
+    val connectionLabel: String = "Disconnected",
+    val agents: List<Agent> = emptyList(),
+    val activeAgent: Agent? = null,
+    val conversationId: Int? = null,
+    val conversationActive: Boolean = false,
+    val messages: List<ChatMessage> = emptyList(),
+    val mode: String = "idle",
+    val devices: List<TrustedDevice> = emptyList(),
+    val pairingStatus: JSONObject? = null,
+    val rawAgents: List<JSONObject> = emptyList(),
+    val knowledgeStatus: JSONObject? = null,
+    val knowledgeLibraries: List<JSONObject> = emptyList(),
+    val knowledgeDocuments: List<JSONObject> = emptyList(),
+    val selectedKnowledgeLibraryId: Int? = null,
+    val knowledgeSearchResult: JSONObject? = null,
+    val knowledgeDocumentContent: JSONObject? = null,
+    val scriptItems: List<JSONObject> = emptyList(),
+    val queueItems: List<JSONObject> = emptyList(),
+    val queueState: String = "paused",
+    val queueLoop: Boolean = false,
+    val configurationOptions: JSONObject? = null,
+    val scriptDefaults: JSONObject? = null,
+    val typeToTalkItems: List<JSONObject> = emptyList(),
+    val typeToTalkState: String = "idle",
+    val typeToTalkSettings: JSONObject? = null,
+    val audioLibraryItems: List<JSONObject> = emptyList(),
+    val audioLibraryPlaying: String? = null,
+    val chatAutoScroll: Boolean = true,
+    val pluginItems: List<JSONObject> = emptyList(),
+    val pluginSummary: JSONObject? = null,
+    val modelItems: List<JSONObject> = emptyList(),
+    val runtimeSettings: JSONObject? = null,
+    val audioDevices: JSONObject? = null,
+    val dashboardStatus: JSONObject? = null,
+    val pipelineStatus: JSONObject? = null,
+    val capabilityStatus: JSONObject? = null,
+    val diagnosticsStatus: JSONObject? = null,
+    val backupStatus: JSONObject? = null,
+    val statusText: String = "",
+    val chatStatus: String = "Ready",
+    val busy: Boolean = false,
+    val recording: Boolean = false,
+    val error: String? = null,
+    val notice: String? = null,
+)
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val DISCOVERY_WINDOW_MS = 6500L
-        private const val PTT_START_TIMEOUT_MS = 9000L
-        private const val PTT_START_GATE_TIMEOUT_MS = 10_000L
     }
 
     private val store = ProfileStore(application)
     private val recorder = PttRecorder()
     private val _ui = MutableStateFlow(MobileUiState())
     val ui: StateFlow<MobileUiState> = _ui.asStateFlow()
-    private val management = ManagementRepository { requireApiSession() }
 
     private var api: VerbaNodeApi? = null
     private var webSocket: VerbaNodeWebSocket? = null
     private var discovery: LanDiscovery? = null
     private var discoveryStopJob: Job? = null
     private var pttStart: CompletableDeferred<Boolean>? = null
-    private var pttStartJob: Job? = null
 
     init {
         reloadProfiles()
     }
 
-    private fun beginOperation(label: String, clearFeedback: Boolean): String {
-        val id = "$label:${UUID.randomUUID()}"
-        _ui.update { state ->
-            state.copy(
-                activeOperations = state.activeOperations + id,
-                error = if (clearFeedback) null else state.error,
-                notice = if (clearFeedback) null else state.notice,
-            )
-        }
-        return id
-    }
-
-    private fun endOperation(id: String) {
-        _ui.update { state -> state.copy(activeOperations = state.activeOperations - id) }
-    }
-
-    private fun runBusy(label: String = "request", block: suspend () -> Unit) {
+    private fun runBusy(block: suspend () -> Unit) {
         viewModelScope.launch {
-            val operation = beginOperation(label, clearFeedback = true)
+            _ui.update { it.copy(busy = true, error = null, notice = null) }
             try {
                 block()
-            } catch (error: CancellationException) {
-                throw error
             } catch (error: Exception) {
                 _ui.update { it.copy(error = friendlyError(error)) }
             } finally {
-                endOperation(operation)
+                _ui.update { it.copy(busy = false) }
             }
         }
+    }
+
+    private fun friendlyError(error: Exception): String = when (error) {
+        is ApiException -> error.message
+        else -> error.message ?: error.javaClass.simpleName
+    }
+
+    private fun pipelineStatusLabel(stage: String): String = when (stage.lowercase()) {
+        "starting" -> "Starting"
+        "idle" -> if (_ui.value.mode == "conversation") "Listening" else "Ready"
+        "listening" -> "Listening"
+        "recording" -> "Recording"
+        "transcribing" -> "Transcribing"
+        "thinking" -> "Generating"
+        "tooling" -> "Running tool"
+        "speaking" -> "Speaking"
+        "recovering" -> "Recovering"
+        "error" -> "Error"
+        "stopped" -> "Ready"
+        else -> stage.replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
+
+    private fun modeStatusLabel(mode: String): String = when (mode) {
+        "conversation" -> "Listening"
+        "ptt", "browser_ptt" -> "Recording"
+        "processing" -> "Transcribing"
+        else -> "Ready"
     }
 
     fun clearMessage() = _ui.update { it.copy(error = null, notice = null) }
@@ -335,15 +393,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun completeSession(session: AuthSession) {
         webSocket?.close()
-        _ui.update {
-            it.copy(
-                session = session,
-                screen = AppScreen.HOME,
-                connectionState = ConnectionState.CONNECTING,
-                connectionLabel = "Connecting",
-                error = null,
-            )
-        }
+        _ui.update { it.copy(session = session, screen = AppScreen.HOME, error = null) }
         loadBootstrapInternal()
         loadDashboardInternal()
         connectWebSocket(session)
@@ -367,9 +417,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 conversationActive = data.mode == "conversation",
                 recording = if (data.mode == "browser_ptt") it.recording else false,
                 chatStatus = when {
-                    !data.sttMode.isNullOrBlank() && data.sttMode != "idle" -> pipelineStatusLabel(data.sttMode, data.mode)
-                    !data.aiMode.isNullOrBlank() && data.aiMode != "idle" -> pipelineStatusLabel(data.aiMode, data.mode)
-                    !data.ttsMode.isNullOrBlank() && data.ttsMode != "idle" -> pipelineStatusLabel(data.ttsMode, data.mode)
+                    !data.sttMode.isNullOrBlank() && data.sttMode != "idle" -> pipelineStatusLabel(data.sttMode)
+                    !data.aiMode.isNullOrBlank() && data.aiMode != "idle" -> pipelineStatusLabel(data.aiMode)
+                    !data.ttsMode.isNullOrBlank() && data.ttsMode != "idle" -> pipelineStatusLabel(data.ttsMode)
                     else -> modeStatusLabel(data.mode)
                 },
             )
@@ -397,13 +447,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         "tts_chunk" -> _ui.update { it.copy(chatStatus = "Speaking") }
                         "tts_stopped" -> _ui.update { it.copy(chatStatus = if (it.mode == "conversation") "Listening" else "Ready") }
                         "pipeline_state" -> data?.optString("state")?.takeIf { it.isNotBlank() }?.let { stage ->
-                            _ui.update { it.copy(pipelineStatus = data, chatStatus = pipelineStatusLabel(stage, it.mode)) }
+                            _ui.update { it.copy(pipelineStatus = data, chatStatus = pipelineStatusLabel(stage)) }
                         }
                         "agents_changed", "agent_changed" -> { loadBootstrapInternal(); if (_ui.value.screen == AppScreen.AGENTS) loadAgentsManagementInternal() }
                         "plugins_changed" -> if (_ui.value.screen == AppScreen.PLUGINS) loadPluginsInternal()
                         "scripts_changed", "queue_changed", "queue_state", "script_defaults_changed" -> if (_ui.value.screen == AppScreen.SCRIPTS) loadScriptsInternal()
                         "type_to_talk_queue" -> if (_ui.value.screen == AppScreen.TYPE_TO_TALK) loadTypeToTalkInternal()
                         "audio_library_changed", "audio_library_state" -> if (_ui.value.screen == AppScreen.AUDIO) loadAudioLibraryInternal()
+                        "knowledge_changed" -> if (_ui.value.screen == AppScreen.KNOWLEDGE || _ui.value.screen == AppScreen.AGENTS) loadKnowledgeInternal()
                         "models_changed", "model_pull" -> {
                             if (_ui.value.screen == AppScreen.SETTINGS) loadSettingsInternal()
                             if (_ui.value.screen == AppScreen.AGENTS || _ui.value.screen == AppScreen.SCRIPTS) loadConfigurationOptionsInternal()
@@ -423,30 +474,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             },
-            onState = { connectionState, label ->
+            onState = { connected, label ->
                 viewModelScope.launch {
-                    _ui.update { state ->
-                        state.copy(
-                            connectionState = connectionState,
+                    _ui.update {
+                        it.copy(
+                            connected = connected,
                             connectionLabel = label,
-                            chatStatus = when (connectionState) {
-                                ConnectionState.CONNECTED -> if (state.chatStatus in setOf("Disconnected", "Connecting", "Reconnecting")) modeStatusLabel(state.mode) else state.chatStatus
-                                ConnectionState.CONNECTING -> "Connecting"
-                                ConnectionState.RECONNECTING -> "Reconnecting"
-                                ConnectionState.DISCONNECTED -> "Disconnected"
-                            },
+                            chatStatus = if (connected) {
+                                if (it.chatStatus == "Disconnected") modeStatusLabel(it.mode) else it.chatStatus
+                            } else "Disconnected",
                         )
                     }
-                }
-            },
-            onProtocolError = { message ->
-                viewModelScope.launch {
-                    _ui.update { it.copy(error = "Live update protocol error: $message") }
-                    runCatching { loadBootstrapInternal() }
-                        .onFailure { error ->
-                            val message = if (error is Exception) friendlyError(error) else error.message ?: "Live state resync failed"
-                            _ui.update { it.copy(error = message) }
-                        }
                 }
             },
             onSessionLost = { viewModelScope.launch { sessionLost("Controller session ended") } },
@@ -456,9 +494,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun sessionLost(message: String) {
         webSocket?.close()
         webSocket = null
-        recorder.cancel()
-        cancelPendingPttStart()
-        _ui.update { it.copy(session = null, connectionState = ConnectionState.DISCONNECTED, connectionLabel = "Disconnected", chatStatus = "Disconnected", screen = AppScreen.LOGIN, conversationActive = false, recording = false, notice = message) }
+        _ui.update { it.copy(session = null, connected = false, connectionLabel = "Disconnected", chatStatus = "Disconnected", screen = AppScreen.LOGIN, conversationActive = false, notice = message) }
     }
 
     fun selectAgent(agentId: Int) = runBusy {
@@ -539,13 +575,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copy(messages = messages) }
     }
 
-    private fun cancelPendingPttStart() {
-        pttStartJob?.cancel()
-        pttStartJob = null
-        pttStart?.let { if (!it.isCompleted) it.complete(false) }
-        pttStart = null
-    }
-
     fun startPtt() {
         if (!_ui.value.connected || _ui.value.session == null) {
             _ui.update { it.copy(error = "VerbaNode is not connected") }
@@ -554,7 +583,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (recorder.isRecording()) return
         val localApi = api ?: return
         val token = _ui.value.session?.token ?: return
-        cancelPendingPttStart()
         val started = CompletableDeferred<Boolean>()
         pttStart = started
         try {
@@ -565,24 +593,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _ui.update { it.copy(error = friendlyError(error), recording = false) }
             return
         }
-        pttStartJob = viewModelScope.launch {
+        viewModelScope.launch {
             try {
-                withTimeout(PTT_START_TIMEOUT_MS) { localApi.startBrowserPttCancellable(token) }
+                withContext(Dispatchers.IO) { localApi.startBrowserPtt(token) }
                 if (!started.isCompleted) started.complete(true)
-            } catch (error: TimeoutCancellationException) {
-                if (!started.isCompleted) started.complete(false)
-                recorder.cancel()
-                _ui.update {
-                    it.copy(
-                        error = "PTT start timed out. Check the connection and try again.",
-                        recording = false,
-                        chatStatus = modeStatusLabel(it.mode),
-                    )
-                }
-                runCatching { withContext(Dispatchers.IO) { localApi.cancelBrowserPtt(token) } }
-            } catch (error: CancellationException) {
-                if (!started.isCompleted) started.complete(false)
-                throw error
             } catch (error: Exception) {
                 if (!started.isCompleted) started.complete(false)
                 recorder.cancel()
@@ -596,41 +610,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (!recorder.isRecording()) return
         val wav = recorder.stop()
         val startGate = pttStart
-        val startJob = pttStartJob
         pttStart = null
-        val operation = beginOperation("ptt-submit", clearFeedback = false)
-        _ui.update { it.copy(recording = false, chatStatus = "Transcribing") }
+        _ui.update { it.copy(recording = false, busy = true, chatStatus = "Transcribing") }
         viewModelScope.launch {
             try {
                 val localApi = api ?: return@launch
                 val token = _ui.value.session?.token ?: return@launch
-                val ready = if (startGate == null) {
-                    false
-                } else {
-                    withTimeoutOrNull(PTT_START_GATE_TIMEOUT_MS) { startGate.await() } ?: false
-                }
-                if (!ready) startJob?.cancel()
+                val ready = startGate?.await() ?: false
                 if (!ready || wav.size <= 44) {
                     withContext(Dispatchers.IO) { localApi.cancelBrowserPtt(token) }
-                    _ui.update { it.copy(chatStatus = modeStatusLabel(it.mode)) }
                 } else {
                     withContext(Dispatchers.IO) { localApi.submitBrowserPtt(token, wav) }
                     refreshConversationInternal()
                 }
-            } catch (error: CancellationException) {
-                throw error
             } catch (error: Exception) {
-                _ui.update { it.copy(error = friendlyError(error), chatStatus = modeStatusLabel(it.mode)) }
+                _ui.update { it.copy(error = friendlyError(error)) }
             } finally {
-                if (pttStartJob === startJob) pttStartJob = null
-                endOperation(operation)
+                _ui.update { it.copy(busy = false) }
             }
         }
     }
 
     fun cancelPtt() {
         recorder.cancel()
-        cancelPendingPttStart()
+        pttStart?.let { if (!it.isCompleted) it.complete(false) }
+        pttStart = null
         _ui.update { it.copy(recording = false, chatStatus = modeStatusLabel(it.mode)) }
         val localApi = api ?: return
         val token = _ui.value.session?.token ?: return
@@ -690,21 +694,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copy(screen = AppScreen.STATUS, statusText = prettyStatus(status)) }
     }
 
-    private fun requireApiSession(): ApiSessionContext {
+    private fun prettyStatus(status: JSONObject): String {
+        val agent = status.optJSONObject("active_agent")?.optString("name", "Unknown") ?: "Unknown"
+        val audio = status.optJSONObject("audio") ?: JSONObject()
+        val ai = status.optJSONObject("ai") ?: JSONObject()
+        return buildString {
+            appendLine("Mode: ${status.optString("mode", "unknown")}")
+            appendLine("Agent: $agent")
+            appendLine("AI: ${ai.optString("mode", "unknown")}")
+            appendLine("Audio: ${audio.optString("mode", "unknown")}")
+            appendLine("Connected controller: ${status.optJSONObject("controller")?.optString("client_name", "unknown")}")
+        }.trim()
+    }
+
+    private fun JSONArray.objectList(): List<JSONObject> = buildList {
+        for (index in 0 until length()) optJSONObject(index)?.let(::add)
+    }
+
+    private fun requireApiSession(): Pair<VerbaNodeApi, String> {
         val localApi = api ?: error("Connect to VerbaNode first")
         val token = _ui.value.session?.token ?: error("Controller session is not active")
-        return ApiSessionContext(localApi, token)
+        return localApi to token
     }
 
     private suspend fun loadDashboardInternal() {
-        val snapshot = management.dashboard()
-        _ui.update {
-            it.copy(
-                dashboardStatus = snapshot.status,
-                pipelineStatus = snapshot.pipeline,
-                capabilityStatus = snapshot.capabilities,
-            )
-        }
+        val (localApi, token) = requireApiSession()
+        val status = withContext(Dispatchers.IO) { localApi.status(token) }
+        val pipeline = withContext(Dispatchers.IO) { localApi.pipeline(token) }
+        val capabilities = withContext(Dispatchers.IO) { localApi.capabilities(token) }
+        _ui.update { it.copy(dashboardStatus = status, pipelineStatus = pipeline, capabilityStatus = capabilities) }
     }
 
     fun openHome() = runBusy {
@@ -718,15 +736,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadConfigurationOptionsInternal() {
-        val options = management.configurationOptions()
+        val (localApi, token) = requireApiSession()
+        val options = withContext(Dispatchers.IO) { localApi.configurationOptions(token) }
+        val liveModels = runCatching { withContext(Dispatchers.IO) { localApi.models(token) } }.getOrElse { JSONArray() }
+        val merged = linkedSetOf<String>()
+        val configured = options.optJSONArray("llm_models") ?: JSONArray()
+        for (index in 0 until configured.length()) {
+            val value = configured.optString(index).trim()
+            if (value.isNotBlank()) merged += value
+        }
+        for (index in 0 until liveModels.length()) {
+            val item = liveModels.optJSONObject(index) ?: continue
+            val value = item.optString("name", item.optString("model")).trim()
+            if (value.isNotBlank()) merged += value
+        }
+        val modelArray = JSONArray(); merged.forEach(modelArray::put)
+        options.put("llm_models", modelArray)
+
+        val edgeVoicePayload = runCatching {
+            withContext(Dispatchers.IO) { localApi.edgeVoices(token) }
+        }.getOrNull()
+        val voices = edgeVoicePayload?.optJSONArray("voices")
+        if (voices != null) {
+            options.put("edge_voices", voices)
+            options.put("edge_voices_source", edgeVoicePayload.optString("source"))
+        }
         _ui.update { it.copy(configurationOptions = options) }
     }
 
     private suspend fun loadAgentsManagementInternal() {
-        _ui.update { it.copy(rawAgents = management.agents()) }
+        val (localApi, token) = requireApiSession()
+        val values = withContext(Dispatchers.IO) { localApi.agentsRaw(token).objectList() }
+        _ui.update { it.copy(rawAgents = values) }
     }
 
-    fun openAgents() = runBusy { loadAgentsManagementInternal(); loadConfigurationOptionsInternal(); _ui.update { it.copy(screen = AppScreen.AGENTS) } }
+    fun openAgents() = runBusy { loadAgentsManagementInternal(); loadConfigurationOptionsInternal(); loadKnowledgeInternal(); _ui.update { it.copy(screen = AppScreen.AGENTS) } }
 
     fun saveAgent(agentId: Int?, payload: JSONObject) = runBusy {
         val (localApi, token) = requireApiSession()
@@ -756,36 +800,88 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         onReady(bytes, "verbanode-agent-$agentId.json", "application/json")
     }
 
-    private suspend fun loadInformationInternal() {
-        _ui.update { it.copy(informationItems = management.information()) }
+    private suspend fun loadKnowledgeInternal(preferredLibraryId: Int? = null) {
+        val (localApi, token) = requireApiSession()
+        val status = withContext(Dispatchers.IO) { localApi.knowledgeStatus(token) }
+        val libraries = withContext(Dispatchers.IO) { localApi.knowledgeLibraries(token).objectList() }
+        val current = preferredLibraryId ?: _ui.value.selectedKnowledgeLibraryId
+        val selected = current?.takeIf { id -> libraries.any { it.optInt("id") == id } } ?: libraries.firstOrNull()?.optInt("id")?.takeIf { it > 0 }
+        val documents = withContext(Dispatchers.IO) { localApi.knowledgeDocuments(token, selected).objectList() }
+        _ui.update { it.copy(knowledgeStatus = status, knowledgeLibraries = libraries, knowledgeDocuments = documents, selectedKnowledgeLibraryId = selected) }
     }
 
-    fun openInformation() = runBusy { loadInformationInternal(); _ui.update { it.copy(screen = AppScreen.INFORMATION) } }
+    fun openKnowledge() = runBusy { loadKnowledgeInternal(); _ui.update { it.copy(screen = AppScreen.KNOWLEDGE) } }
+    fun refreshKnowledge() = runBusy { loadKnowledgeInternal() }
+    fun selectKnowledgeLibrary(id: Int) = runBusy { loadKnowledgeInternal(id) }
 
-    fun saveInformation(id: Int?, title: String, content: String, enabled: Boolean) = runBusy {
+    fun saveKnowledgeLibrary(id: Int?, name: String, description: String, enabled: Boolean) = runBusy {
         val (localApi, token) = requireApiSession()
-        val payload = JSONObject().put("title", title.trim()).put("content", content.trim()).put("enabled", enabled)
+        val payload = JSONObject().put("name", name.trim()).put("description", description.trim()).put("enabled", enabled)
+        val saved = withContext(Dispatchers.IO) { if (id == null) localApi.createKnowledgeLibrary(token, payload) else localApi.updateKnowledgeLibrary(token, id, payload) }
+        loadKnowledgeInternal(saved.optInt("id")); _ui.update { it.copy(notice = "Knowledge Library saved.") }
+    }
+
+    fun deleteKnowledgeLibrary(id: Int) = runBusy {
+        val (localApi, token) = requireApiSession(); withContext(Dispatchers.IO) { localApi.deleteKnowledgeLibrary(token, id) }
+        loadKnowledgeInternal(); _ui.update { it.copy(notice = "Knowledge Library deleted.") }
+    }
+
+    fun saveKnowledgeText(documentId: Int?, title: String, text: String) = runBusy {
+        val libraryId = _ui.value.selectedKnowledgeLibraryId ?: error("Select a Knowledge Library first")
+        val (localApi, token) = requireApiSession(); val payload = JSONObject().put("title", title.trim()).put("text", text.trim())
+        withContext(Dispatchers.IO) { if (documentId == null) localApi.createKnowledgeText(token, libraryId, payload) else localApi.updateKnowledgeText(token, documentId, payload) }
+        loadKnowledgeInternal(libraryId); _ui.update { it.copy(notice = "Knowledge text indexed.", knowledgeDocumentContent = null) }
+    }
+
+    fun loadKnowledgeDocument(id: Int) = runBusy {
+        val (localApi, token) = requireApiSession(); val content = withContext(Dispatchers.IO) { localApi.knowledgeDocumentContent(token, id) }
+        _ui.update { it.copy(knowledgeDocumentContent = content) }
+    }
+
+    fun clearKnowledgeDocument() = _ui.update { it.copy(knowledgeDocumentContent = null) }
+
+    fun uploadKnowledgeDocument(uri: Uri, filename: String, mimeType: String, contentLength: Long?) = runBusy {
+        val libraryId = _ui.value.selectedKnowledgeLibraryId ?: error("Select a Knowledge Library first")
+        val resolver = getApplication<Application>().contentResolver
+        val (localApi, token) = requireApiSession()
         withContext(Dispatchers.IO) {
-            if (id == null) localApi.createInformation(token, payload) else localApi.updateInformation(token, id, payload)
+            localApi.uploadKnowledgeDocument(token, libraryId, filename, mimeType, contentLength) {
+                resolver.openInputStream(uri) ?: error("Could not open knowledge document")
+            }
         }
-        loadInformationInternal(); _ui.update { it.copy(notice = "Information saved.") }
+        loadKnowledgeInternal(libraryId); _ui.update { it.copy(notice = "$filename queued for indexing.") }
     }
 
-    fun deleteInformation(id: Int) = runBusy {
-        val (localApi, token) = requireApiSession()
-        withContext(Dispatchers.IO) { localApi.deleteInformation(token, id) }
-        loadInformationInternal()
+    fun deleteKnowledgeDocument(id: Int) = runBusy {
+        val libraryId = _ui.value.selectedKnowledgeLibraryId; val (localApi, token) = requireApiSession(); withContext(Dispatchers.IO) { localApi.deleteKnowledgeDocument(token, id) }
+        loadKnowledgeInternal(libraryId); _ui.update { it.copy(notice = "Knowledge document deleted.") }
+    }
+
+    fun reindexKnowledgeDocument(id: Int) = runBusy {
+        val (localApi, token) = requireApiSession(); withContext(Dispatchers.IO) { localApi.reindexKnowledgeDocument(token, id) }; _ui.update { it.copy(notice = "Document reindex queued.") }
+    }
+
+    fun rebuildKnowledgeIndex() = runBusy {
+        val (localApi, token) = requireApiSession(); withContext(Dispatchers.IO) { localApi.rebuildKnowledgeIndex(token, _ui.value.selectedKnowledgeLibraryId) }; _ui.update { it.copy(notice = "Knowledge index rebuild started.") }
+    }
+
+    fun searchKnowledge(query: String) = runBusy {
+        val (localApi, token) = requireApiSession(); val result = withContext(Dispatchers.IO) { localApi.searchKnowledge(token, query.trim(), _ui.value.selectedKnowledgeLibraryId) }; _ui.update { it.copy(knowledgeSearchResult = result) }
     }
 
     private suspend fun loadScriptsInternal() {
-        val snapshot = management.scripts()
+        val (localApi, token) = requireApiSession()
+        val scripts = withContext(Dispatchers.IO) { localApi.scripts(token).objectList() }
+        val defaults = withContext(Dispatchers.IO) { localApi.scriptDefaults(token) }
+        val queue = withContext(Dispatchers.IO) { localApi.queue(token) }
+        val queueItems = (queue.optJSONArray("items") ?: JSONArray()).objectList()
         _ui.update {
             it.copy(
-                scriptItems = snapshot.scripts,
-                queueItems = snapshot.queueItems,
-                queueState = snapshot.queueState,
-                queueLoop = snapshot.queueLoop,
-                scriptDefaults = snapshot.defaults,
+                scriptItems = scripts,
+                queueItems = queueItems,
+                queueState = queue.optString("state", "paused"),
+                queueLoop = queue.optBoolean("loop", false),
+                scriptDefaults = defaults,
             )
         }
     }
@@ -819,7 +915,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun moveQueueItem(id: Int, delta: Int) {
         val items = _ui.value.queueItems.toMutableList()
-        val from = items.indexOfFirst { it.id == id }
+        val from = items.indexOfFirst { it.optInt("id") == id }
         if (from < 0 || items.isEmpty()) return
         val to = (from + delta).coerceIn(0, items.lastIndex)
         if (to == from) return
@@ -828,7 +924,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val (a,t)=requireApiSession()
-                withContext(Dispatchers.IO){a.reorderQueue(t, items.map { it.id })}
+                withContext(Dispatchers.IO){a.reorderQueue(t,items.map { it.optInt("id") })}
             } catch (error: Exception) {
                 _ui.update { it.copy(error = friendlyError(error)) }
                 runCatching { loadScriptsInternal() }
@@ -837,18 +933,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadTypeToTalkInternal() {
-        val snapshot = management.typeToTalk()
-        _ui.update {
-            it.copy(
-                typeToTalkItems = snapshot.items,
-                typeToTalkState = snapshot.state,
-                typeToTalkSettings = snapshot.settings ?: it.typeToTalkSettings,
-            )
-        }
+        val (localApi, token) = requireApiSession()
+        val payload = withContext(Dispatchers.IO) { localApi.typeToTalk(token) }
+        val items = (payload.optJSONArray("items") ?: JSONArray()).objectList()
+        _ui.update { it.copy(typeToTalkItems = items, typeToTalkState = payload.optString("state", "idle"), typeToTalkSettings = payload.optJSONObject("settings") ?: it.typeToTalkSettings) }
     }
 
     private suspend fun loadTypeToTalkVoiceOptionsInternal() {
-        val options = management.typeToTalkVoiceOptions(_ui.value.configurationOptions) ?: return
+        val (localApi, token) = requireApiSession()
+        val edgeVoicePayload = runCatching {
+            withContext(Dispatchers.IO) { localApi.edgeVoices(token) }
+        }.getOrNull() ?: return
+        val voices = edgeVoicePayload.optJSONArray("voices") ?: return
+        val options = JSONObject((_ui.value.configurationOptions ?: JSONObject()).toString())
+        options.put("edge_voices", voices)
+        options.put("edge_voices_source", edgeVoicePayload.optString("source"))
         _ui.update { it.copy(configurationOptions = options) }
     }
 
@@ -875,39 +974,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun removeTypeToTalk(id: Int) = runBusy { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.removeTypeToTalk(t,id)}; loadTypeToTalkInternal() }
     fun moveTypeToTalk(id: Int, delta: Int) {
         val items = _ui.value.typeToTalkItems.toMutableList()
-        val from = items.indexOfFirst { it.id == id }
+        val from = items.indexOfFirst { it.optInt("id") == id }
         if (from < 0 || items.isEmpty()) return
         val to = (from + delta).coerceIn(0, items.lastIndex)
         if (to == from) return
         val moved = items.removeAt(from); items.add(to, moved)
         _ui.update { it.copy(typeToTalkItems = items) }
         viewModelScope.launch {
-            try { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.reorderTypeToTalk(t, items.map { it.id })} }
+            try { val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.reorderTypeToTalk(t,items.map { it.optInt("id") })} }
             catch (error: Exception) { _ui.update { it.copy(error = friendlyError(error)) }; runCatching { loadTypeToTalkInternal() } }
         }
     }
 
     private suspend fun loadAudioLibraryInternal() {
-        val snapshot = management.audioLibrary()
-        _ui.update {
-            it.copy(
-                audioLibraryItems = snapshot.items,
-                audioLibraryPlaying = snapshot.playing,
-            )
-        }
+        val (localApi, token) = requireApiSession()
+        val payload = withContext(Dispatchers.IO) { localApi.audioLibrary(token) }
+        val items = (payload.optJSONArray("items") ?: JSONArray()).objectList()
+        _ui.update { it.copy(audioLibraryItems = items, audioLibraryPlaying = payload.optString("playing").ifBlank { null }) }
     }
 
     fun openAudio() = runBusy { loadAudioLibraryInternal(); _ui.update { it.copy(screen = AppScreen.AUDIO) } }
-    fun uploadAudio(uri: Uri, filename: String, mimeType: String, contentLength: Long?) = runBusy("audio-upload") {
-        val (a,t)=requireApiSession()
-        val resolver = getApplication<Application>().contentResolver
-        withContext(Dispatchers.IO) {
-            a.uploadAudio(t, filename, mimeType, contentLength) {
-                resolver.openInputStream(uri) ?: throw IOException("Could not open audio file")
-            }
-        }
-        loadAudioLibraryInternal()
-        _ui.update{it.copy(notice="Audio uploaded.")}
+    fun uploadAudio(bytes: ByteArray, filename: String, mimeType: String) = runBusy {
+        val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.uploadAudio(t,bytes,filename,mimeType)}; loadAudioLibraryInternal(); _ui.update{it.copy(notice="Audio uploaded.")}
     }
     fun playAudio(name: String) = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.playAudio(t,name)}; loadAudioLibraryInternal() }
     fun stopAudio() = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.stopAudio(t)}; loadAudioLibraryInternal() }
@@ -916,8 +1004,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setChatAutoScroll(enabled: Boolean) = _ui.update { it.copy(chatAutoScroll = enabled) }
 
     private suspend fun loadPluginsInternal() {
-        val snapshot = management.plugins()
-        _ui.update { it.copy(pluginItems = snapshot.items, pluginSummary = snapshot.summary) }
+        val (localApi, token) = requireApiSession()
+        val payload = withContext(Dispatchers.IO) { localApi.plugins(token) }
+        val items = (payload.optJSONArray("plugins") ?: JSONArray()).objectList()
+        _ui.update { it.copy(pluginItems = items, pluginSummary = payload.optJSONObject("summary")) }
     }
 
     fun openPlugins() = runBusy { loadPluginsInternal(); _ui.update { it.copy(screen = AppScreen.PLUGINS) } }
@@ -929,13 +1019,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun resetPluginMetrics(id: String? = null) = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.resetPluginMetrics(t,id)}; loadPluginsInternal() }
 
     private suspend fun loadSettingsInternal() {
-        val snapshot = management.settings()
+        val (localApi, token) = requireApiSession()
+        val bootstrap = withContext(Dispatchers.IO) { localApi.bootstrapRaw(token) }
+        val audio = withContext(Dispatchers.IO) { localApi.audioDevices(token) }
+        val models = runCatching { withContext(Dispatchers.IO) { localApi.models(token).objectList() } }.getOrElse { emptyList() }
         _ui.update {
             it.copy(
-                runtimeSettings = snapshot.runtimeSettings,
-                audioDevices = snapshot.audioDevices,
-                modelItems = snapshot.models,
-                dashboardStatus = snapshot.bootstrap,
+                runtimeSettings = bootstrap.optJSONObject("runtime_settings"),
+                audioDevices = audio,
+                modelItems = models,
+                dashboardStatus = bootstrap,
             )
         }
     }
@@ -960,35 +1053,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun runDiagnosticsSelfTest() = runBusy { val(a,t)=requireApiSession(); val value=withContext(Dispatchers.IO){a.runSelfTest(t)}; _ui.update{it.copy(diagnosticsStatus=(it.diagnosticsStatus ?: JSONObject()).put("self_test",value), notice="Self-test complete.")} }
     fun clearDiagnosticLogs() = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.clearDiagnosticLogs(t)}; openDiagnosticsDirect() }
     private suspend fun openDiagnosticsDirect() { val(a,t)=requireApiSession(); _ui.update{it.copy(diagnosticsStatus=withContext(Dispatchers.IO){a.diagnostics(t)})} }
-    fun exportDiagnostics(onReady:(File,String,String)->Unit) = runBusy("diagnostics-export") {
-        val(a,t)=requireApiSession()
-        val file=withContext(Dispatchers.IO) {
-            val target=File.createTempFile("verbanode-diagnostics-", ".zip", getApplication<Application>().cacheDir)
-            try { a.diagnosticsExportTo(t,target) } catch (error: Exception) { target.delete(); throw error }
-        }
-        onReady(file,"verbanode-diagnostics.zip","application/zip")
-    }
+    fun exportDiagnostics(onReady:(ByteArray,String,String)->Unit) = runBusy { val(a,t)=requireApiSession(); val bytes=withContext(Dispatchers.IO){a.diagnosticsExport(t)}; onReady(bytes,"verbanode-diagnostics.zip","application/zip") }
 
     fun openData() = runBusy {
         val(a,t)=requireApiSession(); val value=withContext(Dispatchers.IO){a.backupStatus(t)}
         _ui.update{it.copy(screen=AppScreen.DATA, backupStatus=value)}
     }
-    fun exportBackup(onReady:(File,String,String)->Unit) = runBusy("backup-export") {
-        val(a,t)=requireApiSession()
-        val file=withContext(Dispatchers.IO) {
-            val target=File.createTempFile("verbanode-backup-", ".zip", getApplication<Application>().cacheDir)
-            try { a.downloadBackupTo(t,target) } catch (error: Exception) { target.delete(); throw error }
-        }
-        onReady(file,"verbanode-backup.zip","application/zip")
-    }
-    fun restoreBackup(uri: Uri, filename: String, contentLength: Long?) = runBusy("backup-restore") {
-        val(a,t)=requireApiSession()
-        val resolver = getApplication<Application>().contentResolver
-        withContext(Dispatchers.IO) {
-            a.restoreBackup(t, filename, contentLength) {
-                resolver.openInputStream(uri) ?: throw IOException("Could not open backup")
-            }
-        }
+    fun exportBackup(onReady:(ByteArray,String,String)->Unit) = runBusy { val(a,t)=requireApiSession(); val bytes=withContext(Dispatchers.IO){a.downloadBackup(t)}; onReady(bytes,"verbanode-backup.zip","application/zip") }
+    fun restoreBackup(bytes: ByteArray, filename: String) = runBusy {
+        val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.restoreBackup(t,bytes,filename)}
         _ui.update{it.copy(notice="Backup restored. Restart VerbaNode Core before continuing.")}
     }
 
@@ -999,14 +1072,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val token = _ui.value.session?.token
         webSocket?.close(); webSocket = null
         recorder.cancel()
-        cancelPendingPttStart()
-        if (localApi != null && token != null) {
-            viewModelScope.launch(Dispatchers.IO) {
-                runCatching { localApi.cancelBrowserPtt(token) }
-                runCatching { localApi.logout(token) }
-            }
-        }
-        _ui.update { it.copy(session = null, connectionState = ConnectionState.DISCONNECTED, connectionLabel = "Disconnected", screen = AppScreen.LOGIN, messages = emptyList(), conversationActive = false, recording = false) }
+        if (localApi != null && token != null) viewModelScope.launch(Dispatchers.IO) { runCatching { localApi.logout(token) } }
+        _ui.update { it.copy(session = null, connected = false, screen = AppScreen.LOGIN, messages = emptyList(), conversationActive = false) }
     }
 
     fun removeProfile(profile: ServerProfile) = viewModelScope.launch {
@@ -1016,23 +1083,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun goServers() {
-        val localApi = api
-        val token = _ui.value.session?.token
         webSocket?.close(); webSocket = null
         recorder.cancel()
-        cancelPendingPttStart()
-        if (localApi != null && token != null) {
-            viewModelScope.launch(Dispatchers.IO) { runCatching { localApi.cancelBrowserPtt(token) } }
-        }
         api = null
-        _ui.update { it.copy(screen = AppScreen.SERVERS, session = null, currentProfile = null, connectionState = ConnectionState.DISCONNECTED, connectionLabel = "Disconnected", conversationActive = false, recording = false) }
+        _ui.update { it.copy(screen = AppScreen.SERVERS, session = null, currentProfile = null, connected = false, conversationActive = false) }
     }
 
     override fun onCleared() {
         stopDiscovery(clearResults = false)
         webSocket?.close()
         recorder.cancel()
-        cancelPendingPttStart()
         super.onCleared()
     }
 }
