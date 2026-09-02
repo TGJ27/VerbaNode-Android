@@ -15,6 +15,7 @@ class VerbaNodeWebSocket(
     private val sessionToken: String,
     private val onEvent: (String, JSONObject?) -> Unit,
     private val onState: (Boolean, String) -> Unit,
+    private val onProtocolError: (String) -> Unit,
     private val onSessionLost: () -> Unit,
 ) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
@@ -44,12 +45,13 @@ class VerbaNodeWebSocket(
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            runCatching {
-                val payload = JSONObject(text)
-                val type = payload.optString("type", payload.optString("event"))
-                val data = payload.opt("data") as? JSONObject
-                onEvent(type, data)
+            val event = try {
+                parseWebSocketEvent(text)
+            } catch (error: ApiProtocolException) {
+                onProtocolError(error.message ?: "Malformed WebSocket event")
+                return
             }
+            onEvent(event.type, event.data as? JSONObject)
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {

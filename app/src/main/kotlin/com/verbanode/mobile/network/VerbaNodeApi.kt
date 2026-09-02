@@ -75,7 +75,7 @@ class VerbaNodeApi(
         body: RequestBody? = null,
     ): JSONObject {
         val text = requestText(path, method, sessionToken, json, body)
-        return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() }
+        return parseObjectResponse(text, path)
     }
 
     private fun requestArray(
@@ -85,7 +85,7 @@ class VerbaNodeApi(
         json: JSONObject? = null,
     ): JSONArray {
         val text = requestText(path, method, sessionToken, json)
-        return if (text.isBlank()) JSONArray() else runCatching { JSONArray(text) }.getOrElse { JSONArray() }
+        return parseArrayResponse(text, path)
     }
 
     private fun requestBytes(path: String, sessionToken: String): ByteArray {
@@ -109,7 +109,7 @@ class VerbaNodeApi(
                 .put("client_version", BuildConfig.VERSION_NAME)
                 .put("api_version", 1),
         )
-        return parseAuth(payload)
+        return parseAuth(payload, "/api/auth/login")
     }
 
     fun deviceLogin(deviceId: String, deviceToken: String, deviceName: String): AuthSession {
@@ -124,18 +124,16 @@ class VerbaNodeApi(
                 .put("client_version", BuildConfig.VERSION_NAME)
                 .put("api_version", 1),
         )
-        return parseAuth(payload)
+        return parseAuth(payload, "/api/auth/device-login")
     }
 
-    private fun parseAuth(payload: JSONObject): AuthSession {
-        val token = payload.optString("token")
-        if (token.isBlank()) error("VerbaNode did not return a controller session")
-        val session = payload.optJSONObject("session") ?: JSONObject()
+    private fun parseAuth(payload: JSONObject, context: String): AuthSession {
+        val session = payload.optionalObject("session", context)
         return AuthSession(
-            token = token,
-            sessionId = session.optString("session_id").ifBlank { null },
-            clientName = session.optString("client_name").ifBlank { null },
-            deviceId = session.optString("device_id").ifBlank { null },
+            token = payload.requireString("token", context),
+            sessionId = session?.optionalString("session_id", "$context.session"),
+            clientName = session?.optionalString("client_name", "$context.session"),
+            deviceId = session?.optionalString("device_id", "$context.session"),
         )
     }
 
@@ -146,9 +144,9 @@ class VerbaNodeApi(
     fun activateAgent(sessionToken: String, agentId: Int) { request("/api/agents/$agentId/activate", method = "POST", sessionToken = sessionToken) }
 
     fun conversation(sessionToken: String, conversationId: Int): List<ChatMessage> {
-        val payload = request("/api/conversations/$conversationId", sessionToken = sessionToken)
-        val array = payload.optJSONArray("messages") ?: JSONArray()
-        return buildList { for (index in 0 until array.length()) array.optJSONObject(index)?.let { add(parseMessage(it)) } }
+        val path = "/api/conversations/$conversationId"
+        val payload = request(path, sessionToken = sessionToken)
+        return payload.requireArray("messages", path).requireObjects("$path.messages").map(::parseMessage)
     }
 
     fun sendText(sessionToken: String, text: String, conversationId: Int?): JSONObject = request(
@@ -183,10 +181,16 @@ class VerbaNodeApi(
         return request("/api/browser-ptt/audio", method = "POST", sessionToken = sessionToken, body = multipart)
     }
 
-    fun startPairing(sessionToken: String): JSONObject = request(
-        "/api/devices/pairing/start", method = "POST", sessionToken = sessionToken,
-        json = JSONObject().put("preferred_server_url", baseUrl),
-    )
+    fun startPairing(sessionToken: String): JSONObject {
+        val path = "/api/devices/pairing/start"
+        return request(
+            path, method = "POST", sessionToken = sessionToken,
+            json = JSONObject().put("preferred_server_url", baseUrl),
+        ).also { payload ->
+            payload.requireString("pairing_id", path)
+            payload.requireString("pairing_uri", path)
+        }
+    }
 
     fun claimPairing(pairingId: String?, secret: String?, shortCode: String?, deviceName: String): PairingClaim {
         val json = JSONObject().put("device_name", deviceName).put("device_type", "mobile")
@@ -195,10 +199,13 @@ class VerbaNodeApi(
         if (!secret.isNullOrBlank()) json.put("secret", secret)
         if (!shortCode.isNullOrBlank()) json.put("short_code", shortCode)
         val payload = request("/api/pairing/claim", method = "POST", json = json)
+        val context = "/api/pairing/claim"
         return PairingClaim(
-            deviceId = payload.getString("device_id"), deviceToken = payload.getString("device_token"),
-            deviceName = payload.optString("device_name", deviceName), serverUrl = payload.optString("server_url", baseUrl),
-            spkiSha256 = payload.optString("certificate_spki_sha256", spkiSha256).lowercase(),
+            deviceId = payload.requireString("device_id", context),
+            deviceToken = payload.requireString("device_token", context),
+            deviceName = payload.optionalString("device_name", context, blankAsNull = false) ?: deviceName,
+            serverUrl = payload.optionalString("server_url", context, blankAsNull = false) ?: baseUrl,
+            spkiSha256 = payload.optionalString("certificate_spki_sha256", context)?.lowercase() ?: spkiSha256,
         )
     }
 
@@ -372,5 +379,8 @@ class VerbaNodeApi(
         "/api/queue/$queueId", "PATCH", sessionToken, JSONObject().put("pause_after_seconds", seconds),
     )
 
-    fun wsTicket(sessionToken: String): String = request("/api/auth/ws-ticket", method = "POST", sessionToken = sessionToken).getString("ticket")
+    fun wsTicket(sessionToken: String): String {
+        val path = "/api/auth/ws-ticket"
+        return request(path, method = "POST", sessionToken = sessionToken).requireString("ticket", path)
+    }
 }

@@ -80,7 +80,7 @@ object TlsTrust {
                 ?: (response.handshake?.peerCertificates?.firstOrNull() as? X509Certificate)
                 ?: error("VerbaNode HTTPS identity could not be read")
             val body = response.body.string()
-            val info = parseClientInfo(org.json.JSONObject(body))
+            val info = parseClientInfo(parseObjectResponse(body, "/api/client-info"))
             info.requireAndroidCompatibility()
             val spki = spkiFingerprint(certificate)
             val expected = expectedSpkiSha256?.lowercase()?.takeIf { it.length == 64 }

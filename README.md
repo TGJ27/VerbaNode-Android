@@ -1,18 +1,22 @@
 # VerbaNode Android
 
+## v0.4.5 Phase 2 protocol correctness + Home UX
+
+Successful REST responses are now parsed strictly instead of collapsing malformed JSON into empty objects/arrays. Required client-info, bootstrap, device, session, pairing and WebSocket fields raise typed protocol failures when the Core contract is malformed or incompatible. Type to Talk is now available directly from Home, and feature-card descriptions are constrained to one line with ellipsis so card heights stay aligned.
+
 ## v0.4.4 Phase 1 architecture foundation
 
 Production and test Kotlin now each have one canonical source root. Gradle compiles `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin` explicitly, so stale Kotlin files left under older `src/*/java` layouts by changed-files overlays cannot be mixed with the current app or test architecture. The v0.4.1 root `clean` lifecycle fix remains included.
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.4.4  
+**Current version:** v0.4.5  
 **Required Core:** VerbaNode v0.12.0+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.4 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.5 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
@@ -52,7 +56,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.4.4 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.4.5 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -93,7 +97,7 @@ VerbaNode Core v0.12.0+ (Windows)
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.4.4
+VerbaNode Android v0.4.5
         │
         ├── Home / system dashboard
         ├── Chat / PTT
@@ -111,6 +115,19 @@ VerbaNode Android v0.4.4
 
 Core remains authoritative. Android is a management client and never duplicates the Hybrid RAG backend.
 
+
+
+### v0.4.5 Phase 2 protocol correctness + Home UX
+
+- Adds `ApiProtocolException` for malformed successful REST/WebSocket responses.
+- Rejects empty, malformed, or wrong top-level JSON response shapes instead of substituting empty `{}`/`[]`.
+- Validates required `/api/client-info`, bootstrap, trusted-device, auth-session, pairing-claim, conversation-message and WebSocket fields.
+- Validates client-info contract/API/WebSocket versions and certificate SHA-256 identities before accepting the Core connection.
+- Surfaces malformed WebSocket envelopes to the UI instead of silently dropping them.
+- Restores focused protocol regression tests under the canonical `src/test/kotlin` root.
+- Adds Type to Talk directly to Home.
+- Keeps Home/More feature-card descriptions to one line with ellipsis for consistent card heights.
+- Requires Core v0.12.0+; no Core source changes are required.
 
 ### v0.4.4 Phase 1 architecture foundation
 

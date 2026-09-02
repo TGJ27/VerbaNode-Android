@@ -395,6 +395,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             },
+            onProtocolError = { message ->
+                viewModelScope.launch { _ui.update { it.copy(error = message) } }
+            },
             onSessionLost = { viewModelScope.launch { sessionLost("Controller session ended") } },
         ).also { it.connect() }
     }

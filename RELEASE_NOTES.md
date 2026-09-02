@@ -1,3 +1,25 @@
+# VerbaNode Android v0.4.5 — Phase 2 Protocol Correctness + Home UX
+
+## Protocol correctness
+
+- Adds typed `ApiProtocolException` failures for malformed successful REST/WebSocket responses.
+- Stops substituting empty `{}`/`[]` when successful response JSON is empty, malformed, or the wrong top-level type.
+- Validates required client-info, bootstrap, device, auth-session, pairing, conversation-message and WebSocket fields.
+- Validates client-info contract/API/WebSocket versions plus advertised certificate SHA-256 identities before accepting compatibility.
+- Surfaces malformed WebSocket envelopes in the Android UI instead of silently dropping them.
+- Adds focused protocol regression tests in the canonical Kotlin test source root.
+
+## Home UX
+
+- Adds **Type to Talk** directly to the Home dashboard.
+- Constrains feature-card descriptions to a single line with ellipsis so dashboard/management cards keep consistent heights.
+
+## Version / compatibility
+
+- Bumps Android version code to 16 and version name to 0.4.5.
+- Keeps the Core requirement at VerbaNode v0.12.0+.
+- No VerbaNode Core source or endpoint changes are required.
+
 # VerbaNode Android v0.4.4 — Phase 1 Architecture Foundation
 
 ## Architecture and testability

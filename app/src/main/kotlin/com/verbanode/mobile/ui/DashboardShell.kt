@@ -81,6 +81,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
@@ -215,6 +216,12 @@ internal fun DashboardScreen(viewModel: AppViewModel) {
                     Feature(Icons.Outlined.MonitorHeart, "Diagnostics", "System health", viewModel::openDiagnostics),
                 )
             }
+            item {
+                FeatureCard(
+                    Feature(Icons.Outlined.Mic, "Type to Talk", "Queue direct TTS speech", viewModel::openTypeToTalk),
+                    Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
@@ -245,7 +252,14 @@ private fun FeatureCard(feature: Feature, modifier: Modifier) {
                 Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(feature.title, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-            Text(feature.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+            Text(
+                feature.subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 3.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

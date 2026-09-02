@@ -11,8 +11,8 @@ android {
         applicationId = "com.verbanode.mobile"
         minSdk = 23
         targetSdk = 37
-        versionCode = 15
-        versionName = "0.4.4"
+        versionCode = 16
+        versionName = "0.4.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -94,6 +94,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20260814")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
