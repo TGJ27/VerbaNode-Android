@@ -2,22 +2,17 @@ package com.verbanode.mobile
 
 import com.verbanode.mobile.discovery.DiscoveredServer
 import com.verbanode.mobile.network.Agent
-import com.verbanode.mobile.network.AudioLibraryItem
 import com.verbanode.mobile.network.AuthSession
 import com.verbanode.mobile.network.ChatMessage
 import com.verbanode.mobile.network.ClientInfo
-import com.verbanode.mobile.network.ConnectionState
 import com.verbanode.mobile.network.ProbeResult
-import com.verbanode.mobile.network.ScriptItem
-import com.verbanode.mobile.network.ScriptQueueItem
 import com.verbanode.mobile.network.TrustedDevice
-import com.verbanode.mobile.network.TypeToTalkItem
 import com.verbanode.mobile.storage.ServerProfile
 import org.json.JSONObject
 
 enum class AppScreen {
     SERVERS, TRUST, LOGIN,
-    HOME, CHAT, AGENTS, MORE, INFORMATION, SCRIPTS, AUDIO, TYPE_TO_TALK, PLUGINS, SETTINGS,
+    HOME, CHAT, AGENTS, MORE, KNOWLEDGE, SCRIPTS, AUDIO, TYPE_TO_TALK, PLUGINS, SETTINGS,
     DEVICES, DIAGNOSTICS, DATA, STATUS
 }
 
@@ -30,7 +25,7 @@ data class MobileUiState(
     val trustCandidate: ProbeResult? = null,
     val clientInfo: ClientInfo? = null,
     val session: AuthSession? = null,
-    val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
+    val connected: Boolean = false,
     val connectionLabel: String = "Disconnected",
     val agents: List<Agent> = emptyList(),
     val activeAgent: Agent? = null,
@@ -41,17 +36,22 @@ data class MobileUiState(
     val devices: List<TrustedDevice> = emptyList(),
     val pairingStatus: JSONObject? = null,
     val rawAgents: List<JSONObject> = emptyList(),
-    val informationItems: List<JSONObject> = emptyList(),
-    val scriptItems: List<ScriptItem> = emptyList(),
-    val queueItems: List<ScriptQueueItem> = emptyList(),
+    val knowledgeStatus: JSONObject? = null,
+    val knowledgeLibraries: List<JSONObject> = emptyList(),
+    val knowledgeDocuments: List<JSONObject> = emptyList(),
+    val selectedKnowledgeLibraryId: Int? = null,
+    val knowledgeSearchResult: JSONObject? = null,
+    val knowledgeDocumentContent: JSONObject? = null,
+    val scriptItems: List<JSONObject> = emptyList(),
+    val queueItems: List<JSONObject> = emptyList(),
     val queueState: String = "paused",
     val queueLoop: Boolean = false,
     val configurationOptions: JSONObject? = null,
     val scriptDefaults: JSONObject? = null,
-    val typeToTalkItems: List<TypeToTalkItem> = emptyList(),
+    val typeToTalkItems: List<JSONObject> = emptyList(),
     val typeToTalkState: String = "idle",
     val typeToTalkSettings: JSONObject? = null,
-    val audioLibraryItems: List<AudioLibraryItem> = emptyList(),
+    val audioLibraryItems: List<JSONObject> = emptyList(),
     val audioLibraryPlaying: String? = null,
     val chatAutoScroll: Boolean = true,
     val pluginItems: List<JSONObject> = emptyList(),
@@ -66,11 +66,8 @@ data class MobileUiState(
     val backupStatus: JSONObject? = null,
     val statusText: String = "",
     val chatStatus: String = "Ready",
-    val activeOperations: Set<String> = emptySet(),
+    val busy: Boolean = false,
     val recording: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
-) {
-    val connected: Boolean get() = connectionState == ConnectionState.CONNECTED
-    val busy: Boolean get() = activeOperations.isNotEmpty()
-}
+)

@@ -11,12 +11,9 @@ import com.verbanode.mobile.network.Agent
 import com.verbanode.mobile.network.ApiException
 import com.verbanode.mobile.network.AuthSession
 import com.verbanode.mobile.network.BootstrapData
-import com.verbanode.mobile.network.ChatMessage
 import com.verbanode.mobile.network.ClientInfo
-import com.verbanode.mobile.network.ProbeResult
 import com.verbanode.mobile.network.requireAndroidCompatibility
 import com.verbanode.mobile.network.TlsTrust
-import com.verbanode.mobile.network.TrustedDevice
 import com.verbanode.mobile.network.VerbaNodeApi
 import com.verbanode.mobile.network.VerbaNodeWebSocket
 import com.verbanode.mobile.pairing.parsePairingLink
@@ -36,68 +33,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-
-enum class AppScreen {
-    SERVERS, TRUST, LOGIN,
-    HOME, CHAT, AGENTS, MORE, KNOWLEDGE, SCRIPTS, AUDIO, TYPE_TO_TALK, PLUGINS, SETTINGS,
-    DEVICES, DIAGNOSTICS, DATA, STATUS
-}
-
-data class MobileUiState(
-    val screen: AppScreen = AppScreen.SERVERS,
-    val profiles: List<ServerProfile> = emptyList(),
-    val discovered: List<DiscoveredServer> = emptyList(),
-    val discoveryActive: Boolean = false,
-    val currentProfile: ServerProfile? = null,
-    val trustCandidate: ProbeResult? = null,
-    val clientInfo: ClientInfo? = null,
-    val session: AuthSession? = null,
-    val connected: Boolean = false,
-    val connectionLabel: String = "Disconnected",
-    val agents: List<Agent> = emptyList(),
-    val activeAgent: Agent? = null,
-    val conversationId: Int? = null,
-    val conversationActive: Boolean = false,
-    val messages: List<ChatMessage> = emptyList(),
-    val mode: String = "idle",
-    val devices: List<TrustedDevice> = emptyList(),
-    val pairingStatus: JSONObject? = null,
-    val rawAgents: List<JSONObject> = emptyList(),
-    val knowledgeStatus: JSONObject? = null,
-    val knowledgeLibraries: List<JSONObject> = emptyList(),
-    val knowledgeDocuments: List<JSONObject> = emptyList(),
-    val selectedKnowledgeLibraryId: Int? = null,
-    val knowledgeSearchResult: JSONObject? = null,
-    val knowledgeDocumentContent: JSONObject? = null,
-    val scriptItems: List<JSONObject> = emptyList(),
-    val queueItems: List<JSONObject> = emptyList(),
-    val queueState: String = "paused",
-    val queueLoop: Boolean = false,
-    val configurationOptions: JSONObject? = null,
-    val scriptDefaults: JSONObject? = null,
-    val typeToTalkItems: List<JSONObject> = emptyList(),
-    val typeToTalkState: String = "idle",
-    val typeToTalkSettings: JSONObject? = null,
-    val audioLibraryItems: List<JSONObject> = emptyList(),
-    val audioLibraryPlaying: String? = null,
-    val chatAutoScroll: Boolean = true,
-    val pluginItems: List<JSONObject> = emptyList(),
-    val pluginSummary: JSONObject? = null,
-    val modelItems: List<JSONObject> = emptyList(),
-    val runtimeSettings: JSONObject? = null,
-    val audioDevices: JSONObject? = null,
-    val dashboardStatus: JSONObject? = null,
-    val pipelineStatus: JSONObject? = null,
-    val capabilityStatus: JSONObject? = null,
-    val diagnosticsStatus: JSONObject? = null,
-    val backupStatus: JSONObject? = null,
-    val statusText: String = "",
-    val chatStatus: String = "Ready",
-    val busy: Boolean = false,
-    val recording: Boolean = false,
-    val error: String? = null,
-    val notice: String? = null,
-)
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
@@ -130,33 +65,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _ui.update { it.copy(busy = false) }
             }
         }
-    }
-
-    private fun friendlyError(error: Exception): String = when (error) {
-        is ApiException -> error.message
-        else -> error.message ?: error.javaClass.simpleName
-    }
-
-    private fun pipelineStatusLabel(stage: String): String = when (stage.lowercase()) {
-        "starting" -> "Starting"
-        "idle" -> if (_ui.value.mode == "conversation") "Listening" else "Ready"
-        "listening" -> "Listening"
-        "recording" -> "Recording"
-        "transcribing" -> "Transcribing"
-        "thinking" -> "Generating"
-        "tooling" -> "Running tool"
-        "speaking" -> "Speaking"
-        "recovering" -> "Recovering"
-        "error" -> "Error"
-        "stopped" -> "Ready"
-        else -> stage.replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-    }
-
-    private fun modeStatusLabel(mode: String): String = when (mode) {
-        "conversation" -> "Listening"
-        "ptt", "browser_ptt" -> "Recording"
-        "processing" -> "Transcribing"
-        else -> "Ready"
     }
 
     fun clearMessage() = _ui.update { it.copy(error = null, notice = null) }
@@ -417,9 +325,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 conversationActive = data.mode == "conversation",
                 recording = if (data.mode == "browser_ptt") it.recording else false,
                 chatStatus = when {
-                    !data.sttMode.isNullOrBlank() && data.sttMode != "idle" -> pipelineStatusLabel(data.sttMode)
-                    !data.aiMode.isNullOrBlank() && data.aiMode != "idle" -> pipelineStatusLabel(data.aiMode)
-                    !data.ttsMode.isNullOrBlank() && data.ttsMode != "idle" -> pipelineStatusLabel(data.ttsMode)
+                    !data.sttMode.isNullOrBlank() && data.sttMode != "idle" -> pipelineStatusLabel(data.sttMode, it.mode)
+                    !data.aiMode.isNullOrBlank() && data.aiMode != "idle" -> pipelineStatusLabel(data.aiMode, it.mode)
+                    !data.ttsMode.isNullOrBlank() && data.ttsMode != "idle" -> pipelineStatusLabel(data.ttsMode, it.mode)
                     else -> modeStatusLabel(data.mode)
                 },
             )
@@ -447,7 +355,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         "tts_chunk" -> _ui.update { it.copy(chatStatus = "Speaking") }
                         "tts_stopped" -> _ui.update { it.copy(chatStatus = if (it.mode == "conversation") "Listening" else "Ready") }
                         "pipeline_state" -> data?.optString("state")?.takeIf { it.isNotBlank() }?.let { stage ->
-                            _ui.update { it.copy(pipelineStatus = data, chatStatus = pipelineStatusLabel(stage)) }
+                            _ui.update { it.copy(pipelineStatus = data, chatStatus = pipelineStatusLabel(stage, it.mode)) }
                         }
                         "agents_changed", "agent_changed" -> { loadBootstrapInternal(); if (_ui.value.screen == AppScreen.AGENTS) loadAgentsManagementInternal() }
                         "plugins_changed" -> if (_ui.value.screen == AppScreen.PLUGINS) loadPluginsInternal()

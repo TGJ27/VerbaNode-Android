@@ -1,3 +1,21 @@
+# VerbaNode Android v0.4.4 — Phase 1 Architecture Foundation
+
+## Architecture and testability
+
+- Moves `AppScreen` and `MobileUiState` out of the 1,098-line `AppViewModel.kt` into canonical `UiState.kt`.
+- Moves shared error, pipeline-stage and mode-label formatting into canonical `UiFormatting.kt`.
+- Adds focused unit tests for conversation-aware idle status, known/unknown pipeline stages, PTT/conversation modes and error fallback text.
+- Removes obsolete Kotlin source/test trees under `app/src/main/java` and `app/src/test/java` from the clean repository.
+- Retains explicit canonical Gradle Kotlin source roots for overlay safety.
+- Bumps Android version code to 15 and version name to 0.4.4.
+- Updates CI/release artifact names to v0.4.4.
+
+## Compatibility
+
+- Requires VerbaNode Core v0.12.0 or newer, unchanged from v0.4.3.
+- No Core API or protocol changes are required for Phase 1.
+- Pairing, TLS trust, Knowledge management, Chat/PTT, Scripts, Audio and management behavior remain unchanged.
+
 # VerbaNode Android v0.4.3
 
 ## Overlay-safe unit-test source fix

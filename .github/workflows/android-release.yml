@@ -36,5 +36,5 @@ jobs:
         run: gradle --no-daemon clean testDebugUnitTest assembleRelease
       - uses: actions/upload-artifact@v4
         with:
-          name: VerbaNode-Android-v0.4.3-release-apk
+          name: VerbaNode-Android-v0.4.4-release-apk
           path: app/build/outputs/apk/release/app-release.apk

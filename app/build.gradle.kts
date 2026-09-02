@@ -11,8 +11,8 @@ android {
         applicationId = "com.verbanode.mobile"
         minSdk = 23
         targetSdk = 37
-        versionCode = 14
-        versionName = "0.4.3"
+        versionCode = 15
+        versionName = "0.4.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

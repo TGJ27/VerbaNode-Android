@@ -1,18 +1,18 @@
 # VerbaNode Android
 
-## v0.4.3 overlay-safe production and test sources
+## v0.4.4 Phase 1 architecture foundation
 
 Production and test Kotlin now each have one canonical source root. Gradle compiles `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin` explicitly, so stale Kotlin files left under older `src/*/java` layouts by changed-files overlays cannot be mixed with the current app or test architecture. The v0.4.1 root `clean` lifecycle fix remains included.
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.4.3  
+**Current version:** v0.4.4  
 **Required Core:** VerbaNode v0.12.0+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.3 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.4 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
@@ -52,7 +52,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.4.3 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.4.4 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -93,7 +93,7 @@ VerbaNode Core v0.12.0+ (Windows)
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.4.3
+VerbaNode Android v0.4.4
         │
         ├── Home / system dashboard
         ├── Chat / PTT
@@ -110,6 +110,16 @@ VerbaNode Android v0.4.3
 ```
 
 Core remains authoritative. Android is a management client and never duplicates the Hybrid RAG backend.
+
+
+### v0.4.4 Phase 1 architecture foundation
+
+- Extracts `AppScreen` and `MobileUiState` from `AppViewModel.kt` into `UiState.kt`.
+- Extracts shared error and pipeline/mode status formatting into `UiFormatting.kt`.
+- Adds canonical Kotlin unit coverage for the extracted status/error behavior.
+- Removes obsolete `app/src/main/java` and `app/src/test/java` Kotlin trees from the clean repository.
+- Keeps explicit canonical source-set isolation so changed-files overlays remain safe even if an older working tree still contains legacy files.
+- Makes no VerbaNode Core API, pairing, TLS, Knowledge, audio, or management behavior changes in Phase 1.
 
 ### v0.4.3 build isolation and Hybrid RAG Knowledge management
 
