@@ -1,3 +1,26 @@
+# VerbaNode Android v0.4.6 — Phase 3 Test Restoration
+
+## Restored and expanded tests
+
+- Restores useful legacy state/model test intent into the canonical `app/src/test/kotlin` source set instead of reviving obsolete `src/test/java` contracts.
+- Expands strict protocol-model and REST request/response tests.
+- Expands PTT WAV encoding coverage.
+- Adds connection reconnect/backoff and session-loss policy tests.
+- Adds JVM-testable TLS identity/base-URL validation.
+- Splits QR pairing-link parsing from Android scanner code and adds pairing validation tests.
+
+## CI hardening
+
+- Runs `testDebugUnitTest` as an explicit CI gate before building the debug APK.
+- Always publishes unit-test XML/HTML reports so failures remain inspectable.
+- Keeps unit tests as an explicit gate in the signed release workflow.
+
+## Version / compatibility
+
+- Bumps Android version code to 17 and version name to 0.4.6.
+- Keeps the Core requirement at VerbaNode v0.12.0+.
+- No VerbaNode Core source or endpoint changes are required.
+
 # VerbaNode Android v0.4.5 — Phase 2 Protocol Correctness + Home UX
 
 ## Protocol correctness

@@ -27,14 +27,16 @@ jobs:
         run: |
           test -n "$KEYSTORE_BASE64" || (echo "Missing VERBANODE_KEYSTORE_BASE64" && exit 1)
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/verbanode-release.jks"
+      - name: Run JVM unit tests
+        run: gradle --no-daemon clean testDebugUnitTest --stacktrace
       - name: Build signed release APK
         env:
           VN_KEYSTORE_PATH: ${{ runner.temp }}/verbanode-release.jks
           VN_KEYSTORE_PASSWORD: ${{ secrets.VERBANODE_KEYSTORE_PASSWORD }}
           VN_KEY_ALIAS: ${{ secrets.VERBANODE_KEY_ALIAS }}
           VN_KEY_PASSWORD: ${{ secrets.VERBANODE_KEY_PASSWORD }}
-        run: gradle --no-daemon clean testDebugUnitTest assembleRelease
+        run: gradle --no-daemon assembleRelease --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: VerbaNode-Android-v0.4.5-release-apk
+          name: VerbaNode-Android-v0.4.6-release-apk
           path: app/build/outputs/apk/release/app-release.apk

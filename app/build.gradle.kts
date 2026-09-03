@@ -11,8 +11,8 @@ android {
         applicationId = "com.verbanode.mobile"
         minSdk = 23
         targetSdk = 37
-        versionCode = 16
-        versionName = "0.4.5"
+        versionCode = 17
+        versionName = "0.4.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -59,10 +59,9 @@ android {
         kotlin.directories.add("src/main/kotlin")
     }
 
-    // Canonical test roots for overlay-safe builds. Older revisions left Kotlin
-    // unit/instrumentation tests under src/test/java and src/androidTest/java.
-    // Those stale tests target retired app contracts and must not be mixed with
-    // the current source generation when users apply changed-files overlays.
+    // Canonical test roots for overlay-safe builds. Useful legacy coverage is
+    // restored under src/test/kotlin; obsolete src/test/java overlays remain
+    // excluded so old contracts cannot be mixed into current CI runs.
     sourceSets.named("test") {
         kotlin.directories.clear()
         kotlin.directories.add("src/test/kotlin")

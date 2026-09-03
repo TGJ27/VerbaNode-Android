@@ -1,38 +1,9 @@
 package com.verbanode.mobile.pairing
 
 import android.app.Activity
-import android.net.Uri
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.barcode.common.Barcode
-
-
-data class PairingLink(
-    val serverUrl: String,
-    val pairingId: String,
-    val secret: String,
-    val fingerprintSha256: String?,
-    val spkiSha256: String,
-)
-
-fun parsePairingLink(raw: String): PairingLink {
-    val uri = Uri.parse(raw.trim())
-    require(uri.scheme == "verbanode" && uri.host == "pair") { "This QR code is not a VerbaNode pairing code" }
-    val server = uri.getQueryParameter("server")?.trim()?.removeSuffix("/").orEmpty()
-    val pairingId = uri.getQueryParameter("pairing_id").orEmpty()
-    val secret = uri.getQueryParameter("secret").orEmpty()
-    val spki = uri.getQueryParameter("spki")?.lowercase().orEmpty()
-    require(server.startsWith("https://")) { "Pairing code has an invalid server address" }
-    require(pairingId.isNotBlank() && secret.length >= 20) { "Pairing code is incomplete" }
-    require(spki.length == 64) { "Pairing code is missing the trusted server identity" }
-    return PairingLink(
-        serverUrl = server,
-        pairingId = pairingId,
-        secret = secret,
-        fingerprintSha256 = uri.getQueryParameter("fingerprint")?.lowercase()?.takeIf { it.length == 64 },
-        spkiSha256 = spki,
-    )
-}
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 
 fun scanVerbaNodeQr(activity: Activity, onResult: (String) -> Unit, onError: (String) -> Unit) {
     val options = GmsBarcodeScannerOptions.Builder()

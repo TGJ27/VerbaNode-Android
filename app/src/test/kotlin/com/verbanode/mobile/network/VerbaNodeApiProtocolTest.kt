@@ -5,10 +5,14 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.Request
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicReference
 
 class VerbaNodeApiProtocolTest {
     private fun apiReturning(body: String, status: Int = 200): VerbaNodeApi {
@@ -70,4 +74,78 @@ class VerbaNodeApiProtocolTest {
         assertEquals("invalid_pin", error.code)
         assertEquals("Incorrect PIN", error.message)
     }
+    @Test
+    fun authenticatedRequestSendsSessionTokenHeader() {
+        val seen = AtomicReference<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                seen.set(chain.request())
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        JSONObject()
+                            .put("agents", JSONArray())
+                            .put("messages", JSONArray())
+                            .put("mode", "idle")
+                            .toString()
+                            .toResponseBody("application/json".toMediaType()),
+                    )
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        api.bootstrap("session-123")
+
+        assertEquals("session-123", seen.get().header("X-Session-Token"))
+        assertEquals("/api/bootstrap", seen.get().url.encodedPath)
+    }
+
+    @Test
+    fun pinLoginSendsMobileProtocolContract() {
+        val seen = AtomicReference<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                seen.set(chain.request())
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        JSONObject().put("token", "session-token").toString()
+                            .toResponseBody("application/json".toMediaType()),
+                    )
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        val session = api.pinLogin("123456", "Pixel")
+
+        val request = seen.get()
+        val payload = JSONObject(request.body!!.let { body ->
+            val buffer = okio.Buffer()
+            body.writeTo(buffer)
+            buffer.readUtf8()
+        })
+        assertEquals("POST", request.method)
+        assertEquals("/api/auth/login", request.url.encodedPath)
+        assertEquals("123456", payload.getString("pin"))
+        assertEquals("Pixel", payload.getString("client_name"))
+        assertEquals("mobile", payload.getString("client_type"))
+        assertEquals(1, payload.getInt("api_version"))
+        assertEquals("session-token", session.token)
+    }
+
+    @Test
+    fun conversationRequiresMessagesArray() {
+        assertProtocolError {
+            apiReturning("{\"id\":1}").conversation("session", 1)
+        }
+    }
+
 }

@@ -17,7 +17,7 @@ class WebSocketProtocolTest {
     fun validProtocolEventParsesTypeAndObjectData() {
         val event = parseWebSocketEvent("""{"protocol":1,"type":"mode_changed","data":{"mode":"conversation"}}""")
         assertEquals("mode_changed", event.type)
-        assertEquals("conversation", (event.data as JSONObject).getString("mode"))
+        assertEquals("conversation", (event.data as JSONObject).optString("mode"))
     }
 
     @Test

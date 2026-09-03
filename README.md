@@ -1,5 +1,9 @@
 # VerbaNode Android
 
+## v0.4.6 Phase 3 test restoration
+
+Restores useful legacy test intent into the canonical `src/test/kotlin` tree and expands coverage for protocol models/API requests, Push-to-Talk WAV encoding, connection reconnect policy, TLS identity validation, and QR pairing parsing. CI now runs JVM unit tests as an explicit gate, publishes their reports, and only builds the APK after the test task succeeds.
+
 ## v0.4.5 Phase 2 protocol correctness + Home UX
 
 Successful REST responses are now parsed strictly instead of collapsing malformed JSON into empty objects/arrays. Required client-info, bootstrap, device, session, pairing and WebSocket fields raise typed protocol failures when the Core contract is malformed or incompatible. Type to Talk is now available directly from Home, and feature-card descriptions are constrained to one line with ellipsis so card heights stay aligned.
@@ -10,13 +14,13 @@ Production and test Kotlin now each have one canonical source root. Gradle compi
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.4.5  
+**Current version:** v0.4.6  
 **Required Core:** VerbaNode v0.12.0+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.5 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.6 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
@@ -56,7 +60,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.4.5 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.4.6 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -97,7 +101,7 @@ VerbaNode Core v0.12.0+ (Windows)
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.4.5
+VerbaNode Android v0.4.6
         │
         ├── Home / system dashboard
         ├── Chat / PTT
@@ -115,6 +119,19 @@ VerbaNode Android v0.4.5
 
 Core remains authoritative. Android is a management client and never duplicates the Hybrid RAG backend.
 
+
+
+### v0.4.6 Phase 3 test restoration
+
+- Restores current UI-state coverage derived from the useful pre-isolation tests.
+- Expands protocol model tests for compatibility, agent defaults, bootstrap conversation/message parsing and trusted-device defaults.
+- Expands REST contract tests for session headers, mobile login fields and malformed conversation responses.
+- Expands PTT WAV tests to verify PCM16 mono format fields and empty recordings.
+- Adds deterministic reconnect-policy tests, including the 4401 session-loss no-reconnect rule and capped exponential backoff.
+- Splits QR pairing-link parsing from Android scanner APIs so pairing validation runs in ordinary JVM unit tests.
+- Adds TLS base-URL/SPKI identity validation tests and rejects explicit non-HTTPS base URLs.
+- Makes GitHub CI run `testDebugUnitTest` as a distinct gate and publish JUnit/HTML reports before building APK artifacts.
+- Keeps VerbaNode Core v0.12.0+ compatibility and requires no Core source changes.
 
 
 ### v0.4.5 Phase 2 protocol correctness + Home UX

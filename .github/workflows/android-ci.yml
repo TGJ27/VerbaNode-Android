@@ -20,9 +20,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
-      - name: Unit tests and debug APK
-        run: gradle --no-daemon clean testDebugUnitTest assembleDebug
+      - name: Run JVM unit tests
+        run: gradle --no-daemon clean testDebugUnitTest --stacktrace
+      - name: Upload unit-test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VerbaNode-Android-v0.4.6-unit-test-reports
+          path: |
+            app/build/test-results/testDebugUnitTest/**
+            app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: error
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: VerbaNode-Android-v0.4.5-debug-apk
+          name: VerbaNode-Android-v0.4.6-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk

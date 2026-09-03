@@ -62,7 +62,7 @@ class VerbaNodeWebSocket(
             heartbeat?.cancel(false)
             heartbeat = null
             onState(false, reason.ifBlank { "Disconnected" })
-            if (code == 4401) onSessionLost() else scheduleReconnect()
+            if (shouldReconnectAfterClose(code)) scheduleReconnect() else onSessionLost()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -88,8 +88,7 @@ class VerbaNodeWebSocket(
 
     private fun scheduleReconnect() {
         if (closed) return
-        val attempt = reconnectAttempts++.coerceAtMost(5)
-        val delayMs = (500L shl attempt).coerceAtMost(10_000L)
+        val delayMs = reconnectDelayMs(reconnectAttempts++)
         scheduler.schedule({ if (!closed) connect() }, delayMs, TimeUnit.MILLISECONDS)
     }
 

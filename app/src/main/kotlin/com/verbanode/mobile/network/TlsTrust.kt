@@ -21,12 +21,6 @@ data class ProbeResult(
 )
 
 object TlsTrust {
-    private fun normalizeBaseUrl(raw: String): String {
-        var value = raw.trim().removeSuffix("/")
-        if (!value.startsWith("https://", ignoreCase = true)) value = "https://$value"
-        return value
-    }
-
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }
 
     fun certificateFingerprint(certificate: X509Certificate): String =
@@ -60,7 +54,7 @@ object TlsTrust {
      * therefore captures the certificate directly during the TLS handshake.
      */
     fun probe(rawBaseUrl: String, expectedSpkiSha256: String? = null): ProbeResult {
-        val baseUrl = normalizeBaseUrl(rawBaseUrl)
+        val baseUrl = normalizeTlsBaseUrl(rawBaseUrl)
         val trust = CapturingTrustManager()
         val ssl = SSLContext.getInstance("TLS").apply {
             init(null, arrayOf<TrustManager>(trust), SecureRandom())
@@ -83,7 +77,7 @@ object TlsTrust {
             val info = parseClientInfo(parseObjectResponse(body, "/api/client-info"))
             info.requireAndroidCompatibility()
             val spki = spkiFingerprint(certificate)
-            val expected = expectedSpkiSha256?.lowercase()?.takeIf { it.length == 64 }
+            val expected = expectedSpkiSha256?.takeIf { it.isNotBlank() }?.let(::normalizeSpkiSha256)
             if (expected != null && expected != spki) {
                 error("The discovered VerbaNode identity changed before connection")
             }
@@ -100,8 +94,7 @@ object TlsTrust {
     }
 
     fun pinnedClient(expectedSpkiSha256: String): OkHttpClient {
-        val expected = expectedSpkiSha256.lowercase()
-        require(expected.length == 64) { "Invalid VerbaNode certificate identity" }
+        val expected = normalizeSpkiSha256(expectedSpkiSha256)
         val trust = object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
 
