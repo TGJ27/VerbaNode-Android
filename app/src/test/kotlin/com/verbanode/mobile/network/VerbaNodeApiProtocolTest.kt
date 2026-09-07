@@ -279,4 +279,44 @@ class VerbaNodeApiProtocolTest {
         assertEquals("library_id=7", seen.get().url.query)
     }
 
+    @Test
+    fun knowledgePhase2RequestsUseDedicatedCoreRoutes() {
+        val seen = mutableListOf<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                seen += request
+                val body = if (request.url.encodedPath == "/api/knowledge/jobs") "[]" else "{}"
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(body.toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        api.knowledgeJobs("session")
+        api.reingestKnowledgeDocument("session", 9)
+        api.agentKnowledgeLibraries("session", 4)
+        api.setAgentKnowledgeLibraries("session", 4, setOf(8, 3))
+
+        assertEquals("GET", seen[0].method)
+        assertEquals("/api/knowledge/jobs", seen[0].url.encodedPath)
+        assertEquals("POST", seen[1].method)
+        assertEquals("/api/knowledge/documents/9/reingest", seen[1].url.encodedPath)
+        assertEquals("GET", seen[2].method)
+        assertEquals("/api/knowledge/agents/4/libraries", seen[2].url.encodedPath)
+        assertEquals("PUT", seen[3].method)
+        assertEquals("/api/knowledge/agents/4/libraries", seen[3].url.encodedPath)
+        val payload = seen[3].body!!.let { body ->
+            val buffer = okio.Buffer()
+            body.writeTo(buffer)
+            JSONObject(buffer.readUtf8())
+        }
+        assertEquals(listOf(3, 8), (0 until payload.getJSONArray("library_ids").length()).map { payload.getJSONArray("library_ids").getInt(it) })
+    }
+
 }

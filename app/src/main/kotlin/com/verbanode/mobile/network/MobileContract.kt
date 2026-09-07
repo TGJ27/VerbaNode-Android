@@ -78,6 +78,10 @@ object AndroidCoreContract {
         "knowledge_text_update" to ContractEndpoint("PUT", "/api/knowledge/documents/{document_id}/text"),
         "knowledge_document_delete" to ContractEndpoint("DELETE", "/api/knowledge/documents/{document_id}"),
         "knowledge_document_reindex" to ContractEndpoint("POST", "/api/knowledge/documents/{document_id}/reindex"),
+        "knowledge_document_reingest" to ContractEndpoint("POST", "/api/knowledge/documents/{document_id}/reingest"),
+        "knowledge_jobs" to ContractEndpoint("GET", "/api/knowledge/jobs"),
+        "knowledge_agent_libraries_get" to ContractEndpoint("GET", "/api/knowledge/agents/{agent_id}/libraries"),
+        "knowledge_agent_libraries_set" to ContractEndpoint("PUT", "/api/knowledge/agents/{agent_id}/libraries"),
         "knowledge_index_rebuild" to ContractEndpoint("POST", "/api/knowledge/index/rebuild"),
         "knowledge_search" to ContractEndpoint("POST", "/api/knowledge/search"),
         "knowledge_document_upload" to ContractEndpoint("POST", "/api/knowledge/libraries/{library_id}/documents"),
@@ -147,6 +151,7 @@ object AndroidCoreContract {
         "auth_device_login" to setOf("device_id", "device_token", "client_name", "client_type", "client_version", "api_version"),
         "pairing_start" to setOf("preferred_server_url"),
         "pairing_claim" to setOf("pairing_id", "secret", "short_code", "device_name", "device_type", "device_version", "platform"),
+        "knowledge_agent_libraries_set" to setOf("library_ids"),
     )
 
     val requiredResponseFields: Map<String, Set<String>> = mapOf(

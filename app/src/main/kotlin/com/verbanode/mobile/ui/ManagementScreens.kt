@@ -47,9 +47,17 @@ import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.MainActivity
 import com.verbanode.mobile.knowledge.KnowledgeDocumentRef
 import com.verbanode.mobile.knowledge.KnowledgeDocumentScope
+import com.verbanode.mobile.knowledge.KnowledgeIngestionJobRef
+import com.verbanode.mobile.knowledge.KnowledgeSourceFilter
+import com.verbanode.mobile.knowledge.KnowledgeStatusFilter
+import com.verbanode.mobile.knowledge.knowledgeJobProgressPercent
+import com.verbanode.mobile.knowledge.knowledgeMatchesQuery
 import com.verbanode.mobile.knowledge.knowledgeMatchesScope
+import com.verbanode.mobile.knowledge.knowledgeMatchesSourceFilter
+import com.verbanode.mobile.knowledge.knowledgeMatchesStatus
 import com.verbanode.mobile.knowledge.knowledgeOverviewCounts
 import com.verbanode.mobile.knowledge.knowledgeSourceLabel
+import com.verbanode.mobile.knowledge.latestKnowledgeJob
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -263,8 +271,13 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
     var creatingLibrary by remember { mutableStateOf(false) }
     var creatingText by remember { mutableStateOf(false) }
     var editingText by remember { mutableStateOf<JSONObject?>(null) }
-    var query by remember { mutableStateOf("") }
+    var retrievalQuery by remember { mutableStateOf("") }
+    var catalogQuery by remember { mutableStateOf("") }
     var documentScope by remember { mutableStateOf(KnowledgeDocumentScope.ALL) }
+    var statusFilter by remember { mutableStateOf(KnowledgeStatusFilter.ALL) }
+    var sourceFilter by remember { mutableStateOf(KnowledgeSourceFilter.ALL) }
+    var deleteLibraryTarget by remember { mutableStateOf<JSONObject?>(null) }
+    var deleteDocumentTarget by remember { mutableStateOf<JSONObject?>(null) }
 
     val selectedLibrary = state.knowledgeLibraries.firstOrNull { it.optInt("id") == state.selectedKnowledgeLibraryId }
     val libraryNames = state.knowledgeLibraries.associate { it.optInt("id") to it.optString("name", "Knowledge") }
@@ -273,21 +286,53 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
             id = it.optInt("id"),
             libraryId = it.optInt("library_id"),
             sourceType = it.optString("source_type"),
+            title = it.optString("title"),
+            sourceName = it.optString("source_name"),
+            status = it.optString("status"),
+        )
+    }
+    val jobRefs = state.knowledgeJobs.mapNotNull { job ->
+        val id = job.optInt("id")
+        val documentId = job.optInt("document_id")
+        if (id <= 0 || documentId <= 0) null else KnowledgeIngestionJobRef(
+            id = id,
+            documentId = documentId,
+            jobType = job.optString("job_type", "ingest"),
+            status = job.optString("status", "queued"),
+            stage = job.optString("stage", "queued"),
+            progress = job.optDouble("progress", 0.0),
+            error = job.optString("error").takeIf { it.isNotBlank() },
         )
     }
     val counts = knowledgeOverviewCounts(documentRefs, state.selectedKnowledgeLibraryId)
     val visibleDocuments = state.knowledgeAllDocuments.filter { document ->
-        knowledgeMatchesScope(
-            KnowledgeDocumentRef(document.optInt("id"), document.optInt("library_id"), document.optString("source_type")),
-            documentScope,
-            state.selectedKnowledgeLibraryId,
+        val ref = KnowledgeDocumentRef(
+            id = document.optInt("id"),
+            libraryId = document.optInt("library_id"),
+            sourceType = document.optString("source_type"),
+            title = document.optString("title"),
+            sourceName = document.optString("source_name"),
+            status = document.optString("status"),
         )
+        val libraryName = libraryNames[ref.libraryId].orEmpty()
+        knowledgeMatchesScope(ref, documentScope, state.selectedKnowledgeLibraryId) &&
+            knowledgeMatchesQuery(ref, libraryName, catalogQuery) &&
+            knowledgeMatchesStatus(ref, statusFilter) &&
+            knowledgeMatchesSourceFilter(ref, sourceFilter)
     }
     val documentHeading = when (documentScope) {
         KnowledgeDocumentScope.ALL -> "All Knowledge"
         KnowledgeDocumentScope.LEGACY -> "Legacy Knowledge"
         KnowledgeDocumentScope.CURRENT -> "Current Knowledge"
         KnowledgeDocumentScope.SELECTED_LIBRARY -> selectedLibrary?.optString("name") ?: "Selected Library"
+    }
+    val activeJobs = jobRefs.count { it.status.lowercase() in setOf("queued", "running", "processing") }
+    val failedJobs = jobRefs.count { it.status.lowercase() in setOf("failed", "error") }
+    val filtersActive = catalogQuery.isNotBlank() || statusFilter != KnowledgeStatusFilter.ALL || sourceFilter != KnowledgeSourceFilter.ALL
+
+    fun assignedLibraryIds(agent: JSONObject): Set<Int> = buildSet {
+        val array = agent.optJSONArray("knowledge_library_ids") ?: JSONArray()
+        for (index in 0 until array.length()) array.optInt(index).takeIf { it > 0 }?.let(::add)
     }
 
     ManagementSubpage(viewModel, "Knowledge") { padding ->
@@ -302,14 +347,9 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                 val migratedDocuments = migration?.optInt("migrated_documents", 0) ?: 0
                 val migratedLibraries = migration?.optInt("migrated_libraries", 0) ?: 0
                 DashboardCard("Knowledge overview", "Existing, migrated, and uploaded sources from Core") {
-                    Text(
-                        "${counts.total} sources · ${counts.legacy} legacy · ${counts.current} current",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        "${state.knowledgeLibraries.size} libraries · ${counts.selected} sources in selected library",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    Text("${counts.total} sources · ${counts.legacy} legacy · ${counts.current} current", style = MaterialTheme.typography.bodySmall)
+                    Text("${state.knowledgeLibraries.size} libraries · ${counts.selected} sources in selected library", style = MaterialTheme.typography.bodySmall)
+                    Text("$activeJobs ingestion jobs active · $failedJobs failed jobs", style = MaterialTheme.typography.bodySmall)
                     if (migratedDocuments > 0) {
                         Text(
                             "Legacy migration: $migratedDocuments items across $migratedLibraries libraries",
@@ -325,12 +365,8 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (state.knowledgeLoading) {
-                        Text("Refreshing knowledge…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                    state.knowledgeLoadError?.let { error ->
-                        Text("Knowledge refresh failed: $error", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
+                    if (state.knowledgeLoading) Text("Refreshing knowledge…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    state.knowledgeLoadError?.let { error -> Text("Knowledge refresh failed: $error", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                     OutlinedButton(onClick = viewModel::refreshKnowledge, enabled = !state.knowledgeLoading, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
                         Text(if (state.knowledgeLoading) "Refreshing…" else "Refresh")
                     }
@@ -385,7 +421,33 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                                 modifier = Modifier.weight(1f),
                             ) { Text("Open") }
                             OutlinedButton(onClick = { editingLibrary = library }, modifier = Modifier.weight(1f)) { Text("Edit") }
-                            TextButton(onClick = { viewModel.deleteKnowledgeLibrary(library.optInt("id")) }) { Text("Delete") }
+                            TextButton(onClick = { deleteLibraryTarget = library }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+            selectedLibrary?.let { library ->
+                item {
+                    DashboardCard("Agent access", "Agents allowed to retrieve from ${library.optString("name", "this library")}") {
+                        if (state.rawAgents.isEmpty()) {
+                            Text("No agents are available.", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            state.rawAgents.forEachIndexed { index, agent ->
+                                if (index > 0) HorizontalDivider(Modifier.padding(vertical = 5.dp))
+                                val libraryId = library.optInt("id")
+                                val assigned = libraryId in assignedLibraryIds(agent)
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = assigned,
+                                        enabled = !state.busy,
+                                        onCheckedChange = { checked -> viewModel.setKnowledgeLibraryForAgent(agent.optInt("id"), libraryId, checked) },
+                                    )
+                                    Column(Modifier.weight(1f)) {
+                                        Text(agent.optString("name", "Agent"), fontWeight = FontWeight.SemiBold)
+                                        Text(if (assigned) "Can use this knowledge" else "No access to this library", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -398,11 +460,37 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                     item { FilterChip(selected = documentScope == KnowledgeDocumentScope.CURRENT, onClick = { documentScope = KnowledgeDocumentScope.CURRENT }, label = { Text("Current ${counts.current}") }) }
                     item { FilterChip(selected = documentScope == KnowledgeDocumentScope.SELECTED_LIBRARY, onClick = { documentScope = KnowledgeDocumentScope.SELECTED_LIBRARY }, enabled = selectedLibrary != null, label = { Text("Selected ${counts.selected}") }) }
                 }
+                OutlinedTextField(
+                    value = catalogQuery,
+                    onValueChange = { catalogQuery = it.take(160) },
+                    label = { Text("Search sources") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                Text("Status", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item { FilterChip(statusFilter == KnowledgeStatusFilter.ALL, { statusFilter = KnowledgeStatusFilter.ALL }, label = { Text("Any") }) }
+                    item { FilterChip(statusFilter == KnowledgeStatusFilter.READY, { statusFilter = KnowledgeStatusFilter.READY }, label = { Text("Ready") }) }
+                    item { FilterChip(statusFilter == KnowledgeStatusFilter.PROCESSING, { statusFilter = KnowledgeStatusFilter.PROCESSING }, label = { Text("Processing") }) }
+                    item { FilterChip(statusFilter == KnowledgeStatusFilter.ERROR, { statusFilter = KnowledgeStatusFilter.ERROR }, label = { Text("Errors") }) }
+                }
+                Text("Source", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item { FilterChip(sourceFilter == KnowledgeSourceFilter.ALL, { sourceFilter = KnowledgeSourceFilter.ALL }, label = { Text("Any") }) }
+                    item { FilterChip(sourceFilter == KnowledgeSourceFilter.LEGACY, { sourceFilter = KnowledgeSourceFilter.LEGACY }, label = { Text("Legacy") }) }
+                    item { FilterChip(sourceFilter == KnowledgeSourceFilter.TEXT, { sourceFilter = KnowledgeSourceFilter.TEXT }, label = { Text("Text") }) }
+                    item { FilterChip(sourceFilter == KnowledgeSourceFilter.FILE, { sourceFilter = KnowledgeSourceFilter.FILE }, label = { Text("Files") }) }
+                }
+                if (filtersActive) {
+                    TextButton(onClick = { catalogQuery = ""; statusFilter = KnowledgeStatusFilter.ALL; sourceFilter = KnowledgeSourceFilter.ALL }) { Text("Clear search filters") }
+                }
             }
-            item { SectionTitle(documentHeading) }
+            item { SectionTitle("$documentHeading · ${visibleDocuments.size} shown") }
             if (visibleDocuments.isEmpty() && !state.knowledgeLoading) {
                 item {
-                    val emptyText = when (documentScope) {
+                    val emptyText = if (filtersActive) {
+                        "No knowledge sources match the current search and filters."
+                    } else when (documentScope) {
                         KnowledgeDocumentScope.ALL -> "No knowledge sources yet. Add text or upload a document."
                         KnowledgeDocumentScope.LEGACY -> "No migrated legacy knowledge was found."
                         KnowledgeDocumentScope.CURRENT -> "No current knowledge sources were found."
@@ -420,22 +508,36 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                 val chunkCount = metadata?.optInt("chunk_count", 0) ?: 0
                 val status = document.optString("status", "registered")
                 val editable = sourceType in listOf("manual_text", "legacy_information", "packaged_default")
+                val canReprocess = !editable && document.optString("storage_key").isNotBlank()
+                val latestJob = latestKnowledgeJob(document.optInt("id"), jobRefs)
+                val jobStatus = latestJob?.status?.lowercase().orEmpty()
+                val jobActive = jobStatus in setOf("queued", "running", "processing")
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(13.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(document.optString("title", "Document"), fontWeight = FontWeight.Bold)
-                                Text("$libraryName · $status · $chunkCount chunks", style = MaterialTheme.typography.bodySmall)
+                                Text("$libraryName · ${status.uppercase()} · $chunkCount chunks", style = MaterialTheme.typography.bodySmall)
                                 document.optString("source_name").takeIf { it.isNotBlank() && it != document.optString("title") }?.let { sourceName ->
                                     Text(sourceName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                 }
                             }
                             Pill(sourceLabel.uppercase())
                         }
+                        latestJob?.let { job ->
+                            val kind = if (job.jobType.equals("reingest", true)) "Reprocess" else "Ingest"
+                            Text(
+                                "$kind · ${job.status.uppercase()} · ${job.stage} · ${knowledgeJobProgressPercent(job)}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (job.status.equals("failed", true)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                            job.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                        }
                         document.optString("error").takeIf { it.isNotBlank() }?.let { error ->
                             Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
                         }
-                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(onClick = { viewModel.loadKnowledgeDocument(document.optInt("id")) }, modifier = Modifier.weight(1f)) { Text("Inspect") }
                             if (editable) {
                                 OutlinedButton(
@@ -448,17 +550,34 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                                     modifier = Modifier.weight(1f),
                                 ) { Text("Edit") }
                             }
-                            OutlinedButton(onClick = { viewModel.reindexKnowledgeDocument(document.optInt("id")) }, modifier = Modifier.weight(1f)) { Text("Reindex") }
                         }
-                        TextButton(onClick = { viewModel.deleteKnowledgeDocument(document.optInt("id")) }) { Text("Delete") }
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                onClick = { viewModel.reindexKnowledgeDocument(document.optInt("id")) },
+                                enabled = !jobActive,
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Reindex") }
+                            OutlinedButton(
+                                onClick = { viewModel.reingestKnowledgeDocument(document.optInt("id")) },
+                                enabled = canReprocess && !jobActive,
+                                modifier = Modifier.weight(1f),
+                            ) { Text(if (jobActive) "Processing…" else "Reprocess") }
+                        }
+                        Text(
+                            if (canReprocess) "Reindex refreshes retrieval only. Reprocess reparses the original file and rebuilds its chunks." else "Text sources can be edited and reindexed; file reprocessing requires an original stored file.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 5.dp),
+                        )
+                        TextButton(onClick = { deleteDocumentTarget = document }) { Text("Delete") }
                     }
                 }
             }
             item {
                 DashboardCard("Retrieval test", "Inspect what the selected library returns before Chat uses it") {
-                    OutlinedTextField(query, { query = it }, label = { Text("Question") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(retrievalQuery, { retrievalQuery = it }, label = { Text("Question") }, modifier = Modifier.fillMaxWidth())
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(onClick = { if (query.isNotBlank()) viewModel.searchKnowledge(query) }, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Search") }
+                        Button(onClick = { if (retrievalQuery.isNotBlank()) viewModel.searchKnowledge(retrievalQuery) }, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Search") }
                         OutlinedButton(onClick = viewModel::rebuildKnowledgeIndex, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Rebuild") }
                     }
                     state.knowledgeSearchResult?.let { result ->
@@ -488,6 +607,23 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
         val document = content.optJSONObject("document")
         val libraryName = document?.optInt("library_id")?.let { libraryNames[it] }
         KnowledgeInspectDialog(content, libraryName, onDismiss = viewModel::clearKnowledgeDocument)
+    }
+    deleteLibraryTarget?.let { library ->
+        ConfirmDialog(
+            title = "Delete ${library.optString("name", "Knowledge Library")}?",
+            message = "This permanently removes ${library.optInt("document_count")} knowledge sources and disconnects this library from ${library.optInt("agent_count")} agents. This cannot be undone.",
+            onDismiss = { deleteLibraryTarget = null },
+            onConfirm = { val id = library.optInt("id"); deleteLibraryTarget = null; viewModel.deleteKnowledgeLibrary(id) },
+        )
+    }
+    deleteDocumentTarget?.let { document ->
+        val libraryName = libraryNames[document.optInt("library_id")] ?: "its library"
+        ConfirmDialog(
+            title = "Delete ${document.optString("title", "knowledge source")}?",
+            message = "This permanently removes the source, parsed chunks, and retrieval index data from $libraryName. This cannot be undone.",
+            onDismiss = { deleteDocumentTarget = null },
+            onConfirm = { val id = document.optInt("id"); deleteDocumentTarget = null; viewModel.deleteKnowledgeDocument(id) },
+        )
     }
 }
 

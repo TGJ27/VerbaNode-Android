@@ -253,6 +253,15 @@ class VerbaNodeApi(
     fun updateKnowledgeText(sessionToken: String, documentId: Int, payload: JSONObject): JSONObject = request("/api/knowledge/documents/$documentId/text", "PUT", sessionToken, payload)
     fun deleteKnowledgeDocument(sessionToken: String, id: Int) { request("/api/knowledge/documents/$id", "DELETE", sessionToken) }
     fun reindexKnowledgeDocument(sessionToken: String, id: Int): JSONObject = request("/api/knowledge/documents/$id/reindex", "POST", sessionToken)
+    fun reingestKnowledgeDocument(sessionToken: String, id: Int): JSONObject = request("/api/knowledge/documents/$id/reingest", "POST", sessionToken)
+    fun knowledgeJobs(sessionToken: String): JSONArray = requestArray("/api/knowledge/jobs", sessionToken = sessionToken)
+    fun agentKnowledgeLibraries(sessionToken: String, agentId: Int): JSONObject = request("/api/knowledge/agents/$agentId/libraries", sessionToken = sessionToken)
+    fun setAgentKnowledgeLibraries(sessionToken: String, agentId: Int, libraryIds: Collection<Int>): JSONObject = request(
+        "/api/knowledge/agents/$agentId/libraries",
+        "PUT",
+        sessionToken,
+        JSONObject().put("library_ids", JSONArray().apply { libraryIds.sorted().forEach(::put) }),
+    )
     fun rebuildKnowledgeIndex(sessionToken: String, libraryId: Int?): JSONObject = request(
         "/api/knowledge/index/rebuild", "POST", sessionToken, JSONObject().apply { put("library_id", libraryId ?: JSONObject.NULL) },
     )

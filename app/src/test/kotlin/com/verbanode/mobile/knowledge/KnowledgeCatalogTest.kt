@@ -40,4 +40,27 @@ class KnowledgeCatalogTest {
         assertEquals(2, documents.count { knowledgeMatchesScope(it, KnowledgeDocumentScope.SELECTED_LIBRARY, 10) })
         assertEquals(0, documents.count { knowledgeMatchesScope(it, KnowledgeDocumentScope.SELECTED_LIBRARY, null) })
     }
+    @Test
+    fun phase2FiltersSearchStatusSourceAndJobProgress() {
+        val refund = KnowledgeDocumentRef(5, 10, "manual_text", "Refund Policy", "Refund Policy", "ready")
+        val manual = KnowledgeDocumentRef(6, 20, "pdf", "Product Manual", "manual.pdf", "processing")
+        val failed = KnowledgeDocumentRef(7, 20, "docx", "Broken Import", "broken.docx", "failed")
+
+        assertTrue(knowledgeMatchesQuery(refund, "Company", "refund"))
+        assertTrue(knowledgeMatchesQuery(manual, "Docs", "manual.pdf"))
+        assertTrue(knowledgeMatchesStatus(refund, KnowledgeStatusFilter.READY))
+        assertTrue(knowledgeMatchesStatus(KnowledgeDocumentRef(8, 10, "pdf", "Parsed", "parsed.pdf", "parsed"), KnowledgeStatusFilter.READY))
+        assertTrue(knowledgeMatchesStatus(manual, KnowledgeStatusFilter.PROCESSING))
+        assertTrue(knowledgeMatchesStatus(failed, KnowledgeStatusFilter.ERROR))
+        assertTrue(knowledgeMatchesSourceFilter(refund, KnowledgeSourceFilter.TEXT))
+        assertTrue(knowledgeMatchesSourceFilter(manual, KnowledgeSourceFilter.FILE))
+
+        val jobs = listOf(
+            KnowledgeIngestionJobRef(11, 6, "ingest", "running", "extract", 0.42, null),
+            KnowledgeIngestionJobRef(12, 6, "reingest", "queued", "queued", 0.0, null),
+        )
+        assertEquals(12, latestKnowledgeJob(6, jobs)?.id)
+        assertEquals(42, knowledgeJobProgressPercent(jobs.first()))
+    }
+
 }

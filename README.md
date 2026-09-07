@@ -1,5 +1,9 @@
 # VerbaNode Android
 
+## v0.5.0 Knowledge Management Phase 2
+
+Adds catalog search and status/source filters, ingestion-job visibility, explicit file reprocessing versus retrieval-only reindexing, destructive-action confirmations, and direct agent ↔ library assignment from the Knowledge screen. Requires Core v0.12.3+ so the existing re-ingest/jobs/agent-library routes are advertised in the mobile contract.
+
 ## v0.4.9 Knowledge Management Phase 1
 
 Makes migrated legacy knowledge visible across all libraries on Android instead of only inside the currently selected library. The Knowledge screen now has All / Legacy / Current / Selected views, migration and source counts, explicit refresh/loading/error/empty states, richer source badges and document inspection, while preserving the existing create/upload/edit/reindex management controls. Core v0.12.2 already exposes the required normalized Knowledge APIs, so no Core change is required.
@@ -26,19 +30,24 @@ Production and test Kotlin now each have one canonical source root. Gradle compi
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.4.9  
-**Required Core:** VerbaNode v0.12.2+  
+**Current version:** v0.5.0  
+**Required Core:** VerbaNode v0.12.3+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.9 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.5.0 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
 - Chat and Push-to-Talk
 - **Knowledge Libraries and documents**
   - All / Legacy / Current / Selected source views
+  - local title/source/library search plus Ready / Processing / Errors and Legacy / Text / Files filters
+  - ingestion/re-ingestion job stage and percent visibility
+  - separate retrieval-only Reindex and original-file Reprocess actions
+  - confirmed library/document deletion with impact text
+  - direct agent access toggles on the selected Knowledge Library
   - migrated legacy knowledge visible across every migrated library
   - refresh plus loading/error/empty states
   - create/edit manual text knowledge
@@ -66,7 +75,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Connection flow
 
-1. Start VerbaNode Core v0.12.2 or newer on the Windows PC.
+1. Start VerbaNode Core v0.12.3 or newer on the Windows PC.
 2. Put the phone and PC on the same LAN/Wi-Fi.
 3. Open VerbaNode Android.
 4. Use **Scan Wi-Fi** (single 6.5-second scan), scan a QR pairing code, select a saved server, or enter the HTTPS address manually.
@@ -76,7 +85,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.4.9 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.5.0 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -112,12 +121,12 @@ build_release_apk.bat
 ## Architecture
 
 ```text
-VerbaNode Core v0.12.2+ (Windows)
+VerbaNode Core v0.12.3+ (Windows)
         │
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.4.9
+VerbaNode Android v0.5.0
         │
         ├── Home / system dashboard
         ├── Chat / PTT

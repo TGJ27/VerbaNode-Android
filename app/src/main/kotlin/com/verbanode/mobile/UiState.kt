@@ -40,6 +40,7 @@ data class MobileUiState(
     val knowledgeLibraries: List<JSONObject> = emptyList(),
     val knowledgeDocuments: List<JSONObject> = emptyList(),
     val knowledgeAllDocuments: List<JSONObject> = emptyList(),
+    val knowledgeJobs: List<JSONObject> = emptyList(),
     val knowledgeLoading: Boolean = false,
     val knowledgeLoadError: String? = null,
     val selectedKnowledgeLibraryId: Int? = null,

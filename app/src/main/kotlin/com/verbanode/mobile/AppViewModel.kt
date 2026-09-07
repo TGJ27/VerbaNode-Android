@@ -720,6 +720,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val status = withContext(Dispatchers.IO) { localApi.knowledgeStatus(token) }
             val libraries = withContext(Dispatchers.IO) { localApi.knowledgeLibraries(token).objectList() }
             val allDocuments = withContext(Dispatchers.IO) { localApi.knowledgeDocuments(token).objectList() }
+            val jobs = withContext(Dispatchers.IO) { localApi.knowledgeJobs(token).objectList() }
+            val agents = withContext(Dispatchers.IO) { localApi.agentsRaw(token).objectList() }
             val current = preferredLibraryId ?: _ui.value.selectedKnowledgeLibraryId
             val selected = current?.takeIf { id -> libraries.any { it.optInt("id") == id } }
                 ?: libraries.firstOrNull()?.optInt("id")?.takeIf { it > 0 }
@@ -730,6 +732,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     knowledgeLibraries = libraries,
                     knowledgeDocuments = selectedDocuments,
                     knowledgeAllDocuments = allDocuments,
+                    knowledgeJobs = jobs,
+                    rawAgents = agents,
                     selectedKnowledgeLibraryId = selected,
                     knowledgeLoadError = null,
                 )
@@ -800,7 +804,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun reindexKnowledgeDocument(id: Int) = runBusy {
-        val (localApi, token) = requireApiSession(); withContext(Dispatchers.IO) { localApi.reindexKnowledgeDocument(token, id) }; _ui.update { it.copy(notice = "Document reindex queued.") }
+        val (localApi, token) = requireApiSession()
+        withContext(Dispatchers.IO) { localApi.reindexKnowledgeDocument(token, id) }
+        _ui.update { it.copy(notice = "Retrieval reindex queued.") }
+    }
+
+    fun reingestKnowledgeDocument(id: Int) = runBusy {
+        val selectedLibraryId = _ui.value.selectedKnowledgeLibraryId
+        val (localApi, token) = requireApiSession()
+        withContext(Dispatchers.IO) { localApi.reingestKnowledgeDocument(token, id) }
+        loadKnowledgeInternal(selectedLibraryId)
+        _ui.update { it.copy(notice = "Document reprocessing queued.") }
+    }
+
+    fun setKnowledgeLibraryForAgent(agentId: Int, libraryId: Int, assigned: Boolean) = runBusy {
+        val agent = _ui.value.rawAgents.firstOrNull { it.optInt("id") == agentId }
+            ?: error("Agent $agentId is no longer available")
+        val current = buildSet {
+            val array = agent.optJSONArray("knowledge_library_ids") ?: JSONArray()
+            for (index in 0 until array.length()) array.optInt(index).takeIf { it > 0 }?.let(::add)
+        }
+        val updated = if (assigned) current + libraryId else current - libraryId
+        val (localApi, token) = requireApiSession()
+        withContext(Dispatchers.IO) { localApi.setAgentKnowledgeLibraries(token, agentId, updated) }
+        loadKnowledgeInternal(libraryId)
+        _ui.update { it.copy(notice = if (assigned) "Knowledge access added to agent." else "Knowledge access removed from agent.") }
     }
 
     fun rebuildKnowledgeIndex() = runBusy {

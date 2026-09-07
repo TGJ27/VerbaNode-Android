@@ -1,3 +1,24 @@
+# VerbaNode Android v0.5.0 — Knowledge Management Phase 2
+
+## Catalog and ingestion UX
+
+- Adds local source search across title, source filename/type, and owning library.
+- Adds Ready / Processing / Errors status filters and Legacy / Text / Files source filters.
+- Loads Core ingestion jobs with the Knowledge catalog and shows the latest job type, stage, status, and percentage on each source.
+- Separates retrieval-only **Reindex** from original-file **Reprocess**; reprocessing is disabled for text/legacy sources without a stored source file and while another ingestion job is active.
+
+## Safety and agent access
+
+- Library and document deletion now require explicit confirmation and explain the impact before the destructive request is sent.
+- The selected library exposes direct agent access toggles using Core's dedicated Knowledge permission endpoint instead of rewriting whole agent configurations.
+- Knowledge refresh keeps library document/agent counts, jobs, source catalog, and raw agent assignments synchronized.
+
+## Version / compatibility
+
+- Bumps Android version code to 21 and version name to 0.5.0.
+- Requires VerbaNode Core v0.12.3+ so the existing re-ingest, jobs, and agent-library routes are advertised in the mobile contract.
+- REST API remains v1 and WebSocket protocol remains v1.
+
 # VerbaNode Android v0.4.9 — Knowledge Management Phase 1
 
 ## Knowledge catalog
