@@ -2,6 +2,7 @@ package com.verbanode.mobile
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,6 +15,9 @@ class MobileUiStateTest {
         assertFalse(state.recording)
         assertEquals("Disconnected", state.connectionLabel)
         assertEquals("idle", state.mode)
+        assertTrue(state.knowledgeAllDocuments.isEmpty())
+        assertFalse(state.knowledgeLoading)
+        assertNull(state.knowledgeLoadError)
     }
 
     @Test

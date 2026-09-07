@@ -233,4 +233,50 @@ class VerbaNodeApiProtocolTest {
         assertEquals("/api/restore", seen.get().url.encodedPath)
     }
 
+    @Test
+    fun knowledgeCatalogCanRequestAllDocumentsWithoutLibraryFilter() {
+        val seen = AtomicReference<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                seen.set(chain.request())
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("[]".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        api.knowledgeDocuments("session")
+
+        assertEquals("/api/knowledge/documents", seen.get().url.encodedPath)
+        assertEquals(null, seen.get().url.query)
+    }
+
+    @Test
+    fun selectedKnowledgeLibraryRequestKeepsLibraryFilter() {
+        val seen = AtomicReference<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                seen.set(chain.request())
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("[]".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        api.knowledgeDocuments("session", 7)
+
+        assertEquals("/api/knowledge/documents", seen.get().url.encodedPath)
+        assertEquals("library_id=7", seen.get().url.query)
+    }
+
 }

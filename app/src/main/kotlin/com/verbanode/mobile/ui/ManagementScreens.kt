@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -43,6 +45,11 @@ import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.MainActivity
+import com.verbanode.mobile.knowledge.KnowledgeDocumentRef
+import com.verbanode.mobile.knowledge.KnowledgeDocumentScope
+import com.verbanode.mobile.knowledge.knowledgeMatchesScope
+import com.verbanode.mobile.knowledge.knowledgeOverviewCounts
+import com.verbanode.mobile.knowledge.knowledgeSourceLabel
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -257,76 +264,202 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
     var creatingText by remember { mutableStateOf(false) }
     var editingText by remember { mutableStateOf<JSONObject?>(null) }
     var query by remember { mutableStateOf("") }
+    var documentScope by remember { mutableStateOf(KnowledgeDocumentScope.ALL) }
+
     val selectedLibrary = state.knowledgeLibraries.firstOrNull { it.optInt("id") == state.selectedKnowledgeLibraryId }
+    val libraryNames = state.knowledgeLibraries.associate { it.optInt("id") to it.optString("name", "Knowledge") }
+    val documentRefs = state.knowledgeAllDocuments.map {
+        KnowledgeDocumentRef(
+            id = it.optInt("id"),
+            libraryId = it.optInt("library_id"),
+            sourceType = it.optString("source_type"),
+        )
+    }
+    val counts = knowledgeOverviewCounts(documentRefs, state.selectedKnowledgeLibraryId)
+    val visibleDocuments = state.knowledgeAllDocuments.filter { document ->
+        knowledgeMatchesScope(
+            KnowledgeDocumentRef(document.optInt("id"), document.optInt("library_id"), document.optString("source_type")),
+            documentScope,
+            state.selectedKnowledgeLibraryId,
+        )
+    }
+    val documentHeading = when (documentScope) {
+        KnowledgeDocumentScope.ALL -> "All Knowledge"
+        KnowledgeDocumentScope.LEGACY -> "Legacy Knowledge"
+        KnowledgeDocumentScope.CURRENT -> "Current Knowledge"
+        KnowledgeDocumentScope.SELECTED_LIBRARY -> selectedLibrary?.optString("name") ?: "Selected Library"
+    }
+
     ManagementSubpage(viewModel, "Knowledge") { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             item { Feedback(viewModel) }
             item {
                 val migration = state.knowledgeStatus?.optJSONObject("legacy_information_migration")
-                DashboardCard("Hybrid RAG", "Only relevant evidence is sent to the LLM") {
-                    Text("${state.knowledgeLibraries.size} libraries · ${state.knowledgeDocuments.size} documents in selected library", style = MaterialTheme.typography.bodySmall)
+                val migratedDocuments = migration?.optInt("migrated_documents", 0) ?: 0
+                val migratedLibraries = migration?.optInt("migrated_libraries", 0) ?: 0
+                DashboardCard("Knowledge overview", "Existing, migrated, and uploaded sources from Core") {
+                    Text(
+                        "${counts.total} sources · ${counts.legacy} legacy · ${counts.current} current",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "${state.knowledgeLibraries.size} libraries · ${counts.selected} sources in selected library",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (migratedDocuments > 0) {
+                        Text(
+                            "Legacy migration: $migratedDocuments items across $migratedLibraries libraries",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     val indexStatus = migration?.optString("index_status", "pending") ?: "pending"
                     val completed = migration?.optInt("index_completed", 0) ?: 0
                     val total = migration?.optInt("index_total", 0) ?: 0
-                    Text(if (indexStatus == "indexing") "Dense indexing in background: $completed/$total" else "Dense index: ${indexStatus.uppercase()}", style = MaterialTheme.typography.bodySmall)
-                    Text("BM25 remains available while dense indexing runs.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (indexStatus == "indexing") "Dense indexing in background: $completed/$total" else "Dense index: ${indexStatus.uppercase()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.knowledgeLoading) {
+                        Text("Refreshing knowledge…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                    state.knowledgeLoadError?.let { error ->
+                        Text("Knowledge refresh failed: $error", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    OutlinedButton(onClick = viewModel::refreshKnowledge, enabled = !state.knowledgeLoading, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                        Text(if (state.knowledgeLoading) "Refreshing…" else "Refresh")
+                    }
                 }
             }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { creatingLibrary = true }, modifier = Modifier.weight(1f)) { Text("＋ Library") }
                     OutlinedButton(onClick = { creatingText = true }, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("＋ Text") }
-                    OutlinedButton(onClick = activity::chooseKnowledgeForUpload, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Upload") }
+                    OutlinedButton(onClick = activity::chooseKnowledgeForUpload, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Upload file") }
+                }
+                selectedLibrary?.let { library ->
+                    Text(
+                        "New knowledge will be added to ${library.optString("name", "the selected library")}.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 5.dp),
+                    )
                 }
             }
             item { SectionTitle("Libraries") }
+            if (state.knowledgeLibraries.isEmpty() && !state.knowledgeLoading) {
+                item {
+                    DashboardCard("No Knowledge Libraries yet", "Create a library, then add text or upload a document.") {
+                        Text("Legacy knowledge will also appear here automatically after Core migration.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             items(state.knowledgeLibraries, key = { "library-${it.optInt("id")}" }) { library ->
                 val selected = library.optInt("id") == state.selectedKnowledgeLibraryId
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)) {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
+                ) {
                     Column(Modifier.padding(13.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(library.optString("name", "Knowledge"), fontWeight = FontWeight.Bold)
                                 Text("${library.optInt("document_count")} documents · ${library.optInt("agent_count")} agents", style = MaterialTheme.typography.bodySmall)
+                                library.optString("description").takeIf { it.isNotBlank() }?.let { description ->
+                                    Text(description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                }
                             }
                             if (selected) Pill("SELECTED")
                         }
                         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(onClick = { viewModel.selectKnowledgeLibrary(library.optInt("id")) }, modifier = Modifier.weight(1f)) { Text("Open") }
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.selectKnowledgeLibrary(library.optInt("id"))
+                                    documentScope = KnowledgeDocumentScope.SELECTED_LIBRARY
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Open") }
                             OutlinedButton(onClick = { editingLibrary = library }, modifier = Modifier.weight(1f)) { Text("Edit") }
                             TextButton(onClick = { viewModel.deleteKnowledgeLibrary(library.optInt("id")) }) { Text("Delete") }
                         }
                     }
                 }
             }
-            item { SectionTitle(selectedLibrary?.optString("name") ?: "Documents") }
-            if (selectedLibrary == null) item { Text("Create or select a Knowledge Library first.") }
-            items(state.knowledgeDocuments, key = { "doc-${it.optInt("id")}" }) { document ->
+            item { SectionTitle("Knowledge sources") }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item { FilterChip(selected = documentScope == KnowledgeDocumentScope.ALL, onClick = { documentScope = KnowledgeDocumentScope.ALL }, label = { Text("All ${counts.total}") }) }
+                    item { FilterChip(selected = documentScope == KnowledgeDocumentScope.LEGACY, onClick = { documentScope = KnowledgeDocumentScope.LEGACY }, label = { Text("Legacy ${counts.legacy}") }) }
+                    item { FilterChip(selected = documentScope == KnowledgeDocumentScope.CURRENT, onClick = { documentScope = KnowledgeDocumentScope.CURRENT }, label = { Text("Current ${counts.current}") }) }
+                    item { FilterChip(selected = documentScope == KnowledgeDocumentScope.SELECTED_LIBRARY, onClick = { documentScope = KnowledgeDocumentScope.SELECTED_LIBRARY }, enabled = selectedLibrary != null, label = { Text("Selected ${counts.selected}") }) }
+                }
+            }
+            item { SectionTitle(documentHeading) }
+            if (visibleDocuments.isEmpty() && !state.knowledgeLoading) {
+                item {
+                    val emptyText = when (documentScope) {
+                        KnowledgeDocumentScope.ALL -> "No knowledge sources yet. Add text or upload a document."
+                        KnowledgeDocumentScope.LEGACY -> "No migrated legacy knowledge was found."
+                        KnowledgeDocumentScope.CURRENT -> "No current knowledge sources were found."
+                        KnowledgeDocumentScope.SELECTED_LIBRARY -> if (selectedLibrary == null) "Select a library first." else "This library has no documents yet."
+                    }
+                    Text(emptyText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            items(visibleDocuments, key = { "doc-${it.optInt("id")}" }) { document ->
                 val sourceType = document.optString("source_type")
+                val sourceLabel = knowledgeSourceLabel(sourceType)
+                val libraryId = document.optInt("library_id")
+                val libraryName = libraryNames[libraryId] ?: "Library $libraryId"
+                val metadata = document.optJSONObject("metadata")
+                val chunkCount = metadata?.optInt("chunk_count", 0) ?: 0
+                val status = document.optString("status", "registered")
                 val editable = sourceType in listOf("manual_text", "legacy_information", "packaged_default")
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(13.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(document.optString("title", "Document"), fontWeight = FontWeight.Bold)
-                                Text("$sourceType · ${document.optString("status", "registered")}", style = MaterialTheme.typography.bodySmall)
+                                Text("$libraryName · $status · $chunkCount chunks", style = MaterialTheme.typography.bodySmall)
+                                document.optString("source_name").takeIf { it.isNotBlank() && it != document.optString("title") }?.let { sourceName ->
+                                    Text(sourceName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                }
                             }
-                            TextButton(onClick = { viewModel.loadKnowledgeDocument(document.optInt("id")) }) { Text("Inspect") }
+                            Pill(sourceLabel.uppercase())
+                        }
+                        document.optString("error").takeIf { it.isNotBlank() }?.let { error ->
+                            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
                         }
                         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (editable) OutlinedButton(onClick = { viewModel.loadKnowledgeDocument(document.optInt("id")); editingText = document }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                            OutlinedButton(onClick = { viewModel.loadKnowledgeDocument(document.optInt("id")) }, modifier = Modifier.weight(1f)) { Text("Inspect") }
+                            if (editable) {
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.selectKnowledgeLibrary(libraryId)
+                                        viewModel.loadKnowledgeDocument(document.optInt("id"))
+                                        editingText = document
+                                        documentScope = KnowledgeDocumentScope.SELECTED_LIBRARY
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) { Text("Edit") }
+                            }
                             OutlinedButton(onClick = { viewModel.reindexKnowledgeDocument(document.optInt("id")) }, modifier = Modifier.weight(1f)) { Text("Reindex") }
-                            TextButton(onClick = { viewModel.deleteKnowledgeDocument(document.optInt("id")) }) { Text("Delete") }
                         }
+                        TextButton(onClick = { viewModel.deleteKnowledgeDocument(document.optInt("id")) }) { Text("Delete") }
                     }
                 }
             }
             item {
-                DashboardCard("Retrieval test", "Inspect what this library returns before Chat uses it") {
+                DashboardCard("Retrieval test", "Inspect what the selected library returns before Chat uses it") {
                     OutlinedTextField(query, { query = it }, label = { Text("Question") }, modifier = Modifier.fillMaxWidth())
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(onClick = { if (query.isNotBlank()) viewModel.searchKnowledge(query) }, modifier = Modifier.weight(1f)) { Text("Search") }
-                        OutlinedButton(onClick = viewModel::rebuildKnowledgeIndex, modifier = Modifier.weight(1f)) { Text("Rebuild") }
+                        Button(onClick = { if (query.isNotBlank()) viewModel.searchKnowledge(query) }, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Search") }
+                        OutlinedButton(onClick = viewModel::rebuildKnowledgeIndex, enabled = selectedLibrary != null, modifier = Modifier.weight(1f)) { Text("Rebuild") }
                     }
                     state.knowledgeSearchResult?.let { result ->
                         val confidence = result.optJSONObject("confidence")
@@ -352,7 +485,9 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
         }
     }
     state.knowledgeDocumentContent?.takeIf { editingText == null }?.let { content ->
-        KnowledgeInspectDialog(content, onDismiss = viewModel::clearKnowledgeDocument)
+        val document = content.optJSONObject("document")
+        val libraryName = document?.optInt("library_id")?.let { libraryNames[it] }
+        KnowledgeInspectDialog(content, libraryName, onDismiss = viewModel::clearKnowledgeDocument)
     }
 }
 
@@ -388,15 +523,34 @@ private fun KnowledgeTextDialog(existing: JSONObject?, content: JSONObject?, onD
 }
 
 @Composable
-private fun KnowledgeInspectDialog(content: JSONObject, onDismiss: () -> Unit) {
+private fun KnowledgeInspectDialog(content: JSONObject, libraryName: String?, onDismiss: () -> Unit) {
     val document = content.optJSONObject("document") ?: JSONObject()
     val chunks = content.optJSONArray("chunks") ?: JSONArray()
+    val sourceLabel = knowledgeSourceLabel(document.optString("source_type"))
+    val chunkTotal = content.optInt("chunks_total", chunks.length())
+    val blockTotal = content.optInt("parent_blocks_total", content.optJSONArray("parent_blocks")?.length() ?: 0)
     AlertDialog(onDismissRequest = onDismiss, title = { Text(document.optString("title", "Knowledge document")) }, text = {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { Text("${document.optString("source_type")} · ${chunks.length()} chunks", style = MaterialTheme.typography.bodySmall) }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("${sourceLabel} · ${document.optString("status", "registered")}", fontWeight = FontWeight.SemiBold)
+                        libraryName?.let { Text("Library: $it", style = MaterialTheme.typography.bodySmall) }
+                        document.optString("source_name").takeIf { it.isNotBlank() }?.let { Text("Source: $it", style = MaterialTheme.typography.bodySmall) }
+                        Text("$chunkTotal chunks · $blockTotal parent blocks", style = MaterialTheme.typography.bodySmall)
+                        document.optString("error").takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
             items(minOf(chunks.length(), 12)) { index ->
                 val chunk = chunks.optJSONObject(index) ?: JSONObject()
-                Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp)) { Text("Chunk ${index + 1}", fontWeight = FontWeight.Bold); Text(chunk.optString("heading_path"), style = MaterialTheme.typography.labelSmall); Text(chunk.optString("text"), style = MaterialTheme.typography.bodySmall, maxLines = 8) } }
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text("Chunk ${index + 1}", fontWeight = FontWeight.Bold)
+                        chunk.optString("heading_path").takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                        Text(chunk.optString("text"), style = MaterialTheme.typography.bodySmall, maxLines = 8)
+                    }
+                }
             }
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } })

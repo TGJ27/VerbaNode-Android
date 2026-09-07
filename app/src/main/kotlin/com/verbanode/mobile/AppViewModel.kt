@@ -714,18 +714,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadKnowledgeInternal(preferredLibraryId: Int? = null) {
-        val (localApi, token) = requireApiSession()
-        val status = withContext(Dispatchers.IO) { localApi.knowledgeStatus(token) }
-        val libraries = withContext(Dispatchers.IO) { localApi.knowledgeLibraries(token).objectList() }
-        val current = preferredLibraryId ?: _ui.value.selectedKnowledgeLibraryId
-        val selected = current?.takeIf { id -> libraries.any { it.optInt("id") == id } } ?: libraries.firstOrNull()?.optInt("id")?.takeIf { it > 0 }
-        val documents = withContext(Dispatchers.IO) { localApi.knowledgeDocuments(token, selected).objectList() }
-        _ui.update { it.copy(knowledgeStatus = status, knowledgeLibraries = libraries, knowledgeDocuments = documents, selectedKnowledgeLibraryId = selected) }
+        _ui.update { it.copy(knowledgeLoading = true, knowledgeLoadError = null) }
+        try {
+            val (localApi, token) = requireApiSession()
+            val status = withContext(Dispatchers.IO) { localApi.knowledgeStatus(token) }
+            val libraries = withContext(Dispatchers.IO) { localApi.knowledgeLibraries(token).objectList() }
+            val allDocuments = withContext(Dispatchers.IO) { localApi.knowledgeDocuments(token).objectList() }
+            val current = preferredLibraryId ?: _ui.value.selectedKnowledgeLibraryId
+            val selected = current?.takeIf { id -> libraries.any { it.optInt("id") == id } }
+                ?: libraries.firstOrNull()?.optInt("id")?.takeIf { it > 0 }
+            val selectedDocuments = if (selected == null) emptyList() else allDocuments.filter { it.optInt("library_id") == selected }
+            _ui.update {
+                it.copy(
+                    knowledgeStatus = status,
+                    knowledgeLibraries = libraries,
+                    knowledgeDocuments = selectedDocuments,
+                    knowledgeAllDocuments = allDocuments,
+                    selectedKnowledgeLibraryId = selected,
+                    knowledgeLoadError = null,
+                )
+            }
+        } catch (error: Exception) {
+            _ui.update { it.copy(knowledgeLoadError = friendlyError(error)) }
+            throw error
+        } finally {
+            _ui.update { it.copy(knowledgeLoading = false) }
+        }
     }
 
-    fun openKnowledge() = runBusy { loadKnowledgeInternal(); _ui.update { it.copy(screen = AppScreen.KNOWLEDGE) } }
+    fun openKnowledge() {
+        _ui.update { it.copy(screen = AppScreen.KNOWLEDGE, error = null, notice = null, knowledgeLoadError = null) }
+        runBusy { loadKnowledgeInternal() }
+    }
+
     fun refreshKnowledge() = runBusy { loadKnowledgeInternal() }
-    fun selectKnowledgeLibrary(id: Int) = runBusy { loadKnowledgeInternal(id) }
+
+    fun selectKnowledgeLibrary(id: Int) {
+        _ui.update { state ->
+            val selected = id.takeIf { candidate -> state.knowledgeLibraries.any { it.optInt("id") == candidate } }
+            state.copy(
+                selectedKnowledgeLibraryId = selected,
+                knowledgeDocuments = if (selected == null) emptyList() else state.knowledgeAllDocuments.filter { it.optInt("library_id") == selected },
+                knowledgeDocumentContent = null,
+                knowledgeSearchResult = null,
+            )
+        }
+    }
 
     fun saveKnowledgeLibrary(id: Int?, name: String, description: String, enabled: Boolean) = runBusy {
         val (localApi, token) = requireApiSession()

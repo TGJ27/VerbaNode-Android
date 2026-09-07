@@ -1,3 +1,26 @@
+# VerbaNode Android v0.4.9 — Knowledge Management Phase 1
+
+## Knowledge catalog
+
+- Loads the complete normalized Knowledge document catalog from Core, then derives the selected-library view locally.
+- Adds All, Legacy, Current, and Selected-library filters so migrated legacy entries remain visible even when migration created multiple libraries.
+- Shows total/current/legacy/selected source counts and Core legacy-migration/index status.
+- Labels migrated legacy, packaged defaults, manual text, and uploaded file types clearly in the mobile list.
+
+## Read-path UX
+
+- Opens the Knowledge screen before its refresh completes so users see a real loading state instead of waiting on the previous screen.
+- Adds explicit Knowledge refresh, loading, refresh-error, and empty states.
+- Shows the owning library on every document when browsing across libraries.
+- Expands document inspection with source, library, status, chunk totals, parent-block totals, and ingestion errors.
+- Keeps the existing create/upload/edit/reindex/delete and retrieval-test controls available; this phase does not change Core retrieval behavior.
+
+## Version / compatibility
+
+- Bumps Android version code to 20 and version name to 0.4.9.
+- Keeps the Core requirement at VerbaNode v0.12.2+.
+- No VerbaNode Core source, endpoint, database, or protocol change is required.
+
 # VerbaNode Android v0.4.8 — Cleanup + Release Hardening
 
 ## Streaming / memory safety

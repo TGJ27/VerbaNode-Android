@@ -1,5 +1,9 @@
 # VerbaNode Android
 
+## v0.4.9 Knowledge Management Phase 1
+
+Makes migrated legacy knowledge visible across all libraries on Android instead of only inside the currently selected library. The Knowledge screen now has All / Legacy / Current / Selected views, migration and source counts, explicit refresh/loading/error/empty states, richer source badges and document inspection, while preserving the existing create/upload/edit/reindex management controls. Core v0.12.2 already exposes the required normalized Knowledge APIs, so no Core change is required.
+
 ## v0.4.8 Cleanup + release hardening
 
 Streams Audio Library uploads and backup restores directly from Android document storage instead of materializing full files in memory, centralizes file-transfer plumbing outside `AppViewModel`, adds Android lint as a CI/release gate, and verifies signed release APKs with SHA-256 artifacts. R8 remains intentionally disabled until a dedicated minified release/device verification pass.
@@ -22,19 +26,21 @@ Production and test Kotlin now each have one canonical source root. Gradle compi
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.4.8  
+**Current version:** v0.4.9  
 **Required Core:** VerbaNode v0.12.2+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.8 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.9 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
 - Chat and Push-to-Talk
 - **Knowledge Libraries and documents**
-  - migrated legacy knowledge
+  - All / Legacy / Current / Selected source views
+  - migrated legacy knowledge visible across every migrated library
+  - refresh plus loading/error/empty states
   - create/edit manual text knowledge
   - upload mixed document files to Core
   - large uploads are streamed from Android storage instead of loaded fully into phone memory
@@ -70,7 +76,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.4.8 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.4.9 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -111,7 +117,7 @@ VerbaNode Core v0.12.2+ (Windows)
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.4.8
+VerbaNode Android v0.4.9
         │
         ├── Home / system dashboard
         ├── Chat / PTT
