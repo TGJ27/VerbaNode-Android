@@ -18,8 +18,11 @@ class ConnectionPolicyTest {
     }
 
     @Test
-    fun authenticationCloseDoesNotReconnect() {
+    fun terminalContractCloseCodesDoNotReconnect() {
         assertFalse(shouldReconnectAfterClose(4401))
+        assertFalse(shouldReconnectAfterClose(4403))
+        assertFalse(shouldReconnectAfterClose(4406))
+        assertTrue(shouldReconnectAfterClose(4408))
         assertTrue(shouldReconnectAfterClose(1000))
         assertTrue(shouldReconnectAfterClose(1006))
     }

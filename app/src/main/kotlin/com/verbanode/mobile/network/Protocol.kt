@@ -87,6 +87,14 @@ internal fun JSONObject.requireInt(field: String, context: String): Int {
     return longValue.toInt()
 }
 
+internal fun JSONObject.requirePositiveDouble(field: String, context: String): Double {
+    val value = opt(field)
+    if (value !is Number) protocolError(context, "field '$field' must be a number")
+    val result = value.toDouble()
+    if (!result.isFinite() || result <= 0.0) protocolError(context, "field '$field' must be a positive number")
+    return result
+}
+
 internal fun JSONObject.requireBoolean(field: String, context: String): Boolean {
     val value = opt(field)
     if (value !is Boolean) protocolError(context, "field '$field' must be a boolean")
@@ -117,7 +125,7 @@ internal fun parseWebSocketEvent(text: String): WebSocketEvent {
     val context = "WebSocket event"
     val payload = parseObjectResponse(text, context)
     val protocol = payload.requireInt("protocol", context)
-    if (protocol != 1) protocolError(context, "unsupported protocol version $protocol")
+    if (protocol != AndroidCoreContract.WEBSOCKET_PROTOCOL_VERSION) protocolError(context, "unsupported protocol version $protocol")
 
     val type = payload.optionalString("type", context)
         ?: payload.optionalString("event", context)

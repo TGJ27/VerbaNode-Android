@@ -15,8 +15,26 @@ class ProtocolModelsTest {
         .put("product", "VerbaNode")
         .put("server", JSONObject().put("version", "0.12.1").put("build", "release"))
         .put("instance", JSONObject().put("id", "instance-1").put("name", "VerbaNode"))
-        .put("api", JSONObject().put("version", 1))
-        .put("websocket", JSONObject().put("protocol_version", 1))
+        .put("api", JSONObject().put("version", 1).put("minimum_supported_version", 1))
+        .put(
+            "authentication",
+            JSONObject()
+                .put("login_endpoint", "/api/auth/login")
+                .put("device_login_endpoint", "/api/auth/device-login")
+                .put("logout_endpoint", "/api/auth/logout")
+                .put("session_header", "X-Session-Token")
+                .put("pairing_claim_endpoint", "/api/pairing/claim"),
+        )
+        .put(
+            "websocket",
+            JSONObject()
+                .put("endpoint", "/ws")
+                .put("protocol_version", 1)
+                .put("ticket_endpoint", "/api/auth/ws-ticket")
+                .put("ticket_required", true)
+                .put("heartbeat_interval_seconds", 15.0)
+                .put("heartbeat_timeout_seconds", 45.0),
+        )
         .put(
             "tls",
             JSONObject()
@@ -37,6 +55,7 @@ class ProtocolModelsTest {
                 .put("broad_audio_formats", true)
                 .put("knowledge_management", true),
         )
+        .put("mobile_contract", AndroidCoreContract.toJson())
 
     private fun assertProtocolError(block: () -> Unit) {
         val error = runCatching(block).exceptionOrNull()
@@ -92,9 +111,39 @@ class ProtocolModelsTest {
     }
 
     @Test
-    fun androidCompatibilityRejectsUnsupportedApiVersion() {
-        val info = parseClientInfo(validClientInfo().apply { getJSONObject("api").put("version", 2) })
+    fun androidCompatibilityRejectsServerThatDroppedApiV1() {
+        val info = parseClientInfo(
+            validClientInfo().apply {
+                getJSONObject("api").put("version", 2).put("minimum_supported_version", 2)
+                getJSONObject("mobile_contract").put("api_version", 2).put("minimum_api_version", 2)
+            },
+        )
         assertProtocolError { info.requireAndroidCompatibility() }
+    }
+
+
+    @Test
+    fun authGrantParsesNegotiatedProtocolAndHeartbeat() {
+        val session = parseAuthSession(
+            JSONObject()
+                .put("token", "token-1")
+                .put("server_version", "0.12.2")
+                .put("api_version", 1)
+                .put("websocket_protocol_version", 1)
+                .put("heartbeat_interval_seconds", 12.5)
+                .put("heartbeat_timeout_seconds", 40.0)
+                .put("session", JSONObject().put("session_id", "session-1").put("client_name", "Pixel")),
+        )
+        assertEquals("token-1", session.token)
+        assertEquals(1, session.apiVersion)
+        assertEquals(1, session.websocketProtocolVersion)
+        assertEquals(12.5, session.heartbeatIntervalSeconds, 0.0)
+        assertEquals(40.0, session.heartbeatTimeoutSeconds, 0.0)
+    }
+
+    @Test
+    fun authGrantRejectsMissingNegotiationMetadata() {
+        assertProtocolError { parseAuthSession(JSONObject().put("token", "token-1")) }
     }
 
     @Test

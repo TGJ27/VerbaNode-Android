@@ -65,7 +65,7 @@ object TlsTrust {
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build()
-        val request = Request.Builder().url("$baseUrl/api/client-info").get().build()
+        val request = Request.Builder().url(baseUrl + AndroidCoreContract.endpoint("client_info").path).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw ApiException(response.code, null, "Compatibility check failed (${response.code})")

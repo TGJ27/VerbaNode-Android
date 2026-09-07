@@ -30,8 +30,9 @@ class VerbaNodeApi(
         json: JSONObject? = null,
         body: RequestBody? = null,
     ): Request {
+        AndroidCoreContract.requireDeclared(method, path)
         val builder = Request.Builder().url(baseUrl.removeSuffix("/") + path)
-        if (!sessionToken.isNullOrBlank()) builder.header("X-Session-Token", sessionToken)
+        if (!sessionToken.isNullOrBlank()) builder.header(AndroidCoreContract.SESSION_HEADER, sessionToken)
         val requestBody = body ?: json?.toString()?.toRequestBody(jsonMedia)
         when (method) {
             "GET" -> builder.get()
@@ -107,7 +108,7 @@ class VerbaNodeApi(
                 .put("client_name", deviceName)
                 .put("client_type", "mobile")
                 .put("client_version", BuildConfig.VERSION_NAME)
-                .put("api_version", 1),
+                .put("api_version", AndroidCoreContract.API_VERSION),
         )
         return parseAuth(payload, "/api/auth/login")
     }
@@ -122,20 +123,12 @@ class VerbaNodeApi(
                 .put("client_name", deviceName)
                 .put("client_type", "mobile")
                 .put("client_version", BuildConfig.VERSION_NAME)
-                .put("api_version", 1),
+                .put("api_version", AndroidCoreContract.API_VERSION),
         )
         return parseAuth(payload, "/api/auth/device-login")
     }
 
-    private fun parseAuth(payload: JSONObject, context: String): AuthSession {
-        val session = payload.optionalObject("session", context)
-        return AuthSession(
-            token = payload.requireString("token", context),
-            sessionId = session?.optionalString("session_id", "$context.session"),
-            clientName = session?.optionalString("client_name", "$context.session"),
-            deviceId = session?.optionalString("device_id", "$context.session"),
-        )
-    }
+    private fun parseAuth(payload: JSONObject, context: String): AuthSession = parseAuthSession(payload, context)
 
     fun logout(sessionToken: String) { request("/api/auth/logout", method = "POST", sessionToken = sessionToken) }
     fun bootstrap(sessionToken: String): BootstrapData = parseBootstrap(request("/api/bootstrap", sessionToken = sessionToken))

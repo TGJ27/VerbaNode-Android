@@ -339,6 +339,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         webSocket = VerbaNodeWebSocket(
             localApi,
             session.token,
+            session.heartbeatIntervalSeconds,
             onEvent = { type, data ->
                 viewModelScope.launch {
                     when (type) {

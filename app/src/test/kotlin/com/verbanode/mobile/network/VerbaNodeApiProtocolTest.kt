@@ -15,6 +15,16 @@ import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicReference
 
 class VerbaNodeApiProtocolTest {
+
+    private fun authGrant(token: String = "session-token"): JSONObject = JSONObject()
+        .put("token", token)
+        .put("server_version", "0.12.2")
+        .put("api_version", 1)
+        .put("websocket_protocol_version", 1)
+        .put("heartbeat_interval_seconds", 15.0)
+        .put("heartbeat_timeout_seconds", 45.0)
+        .put("session", JSONObject().put("session_id", "session-1").put("client_name", "Pixel"))
+
     private fun apiReturning(body: String, status: Int = 200): VerbaNodeApi {
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
@@ -116,7 +126,7 @@ class VerbaNodeApiProtocolTest {
                     .code(200)
                     .message("OK")
                     .body(
-                        JSONObject().put("token", "session-token").toString()
+                        authGrant().toString()
                             .toResponseBody("application/json".toMediaType()),
                     )
                     .build()
@@ -139,6 +149,12 @@ class VerbaNodeApiProtocolTest {
         assertEquals("mobile", payload.getString("client_type"))
         assertEquals(1, payload.getInt("api_version"))
         assertEquals("session-token", session.token)
+    }
+
+
+    @Test
+    fun authGrantRequiresProtocolAndHeartbeatMetadata() {
+        assertProtocolError { apiReturning("{\"token\":\"session-token\"}").pinLogin("123456", "Pixel") }
     }
 
     @Test

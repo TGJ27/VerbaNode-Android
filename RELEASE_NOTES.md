@@ -1,3 +1,32 @@
+# VerbaNode Android v0.4.7 — Phase 4 Core ↔ Android Contract Hardening
+
+## Contract negotiation
+
+- Requires the versioned `mobile_contract` published by VerbaNode Core v0.12.2+.
+- Validates Core API compatibility, WebSocket protocol, session header, WebSocket paths, and all 108 Android REST method/path operations before authentication.
+- Validates critical auth, trusted-device, pairing, bootstrap, and WebSocket request/response field requirements against the advertised manifest.
+- Every Android REST request is checked against the local declared contract before it is sent, including dynamic route templates.
+
+## Auth / WebSocket hardening
+
+- Auth grants now require negotiated Core/API/WebSocket metadata and server heartbeat settings instead of accepting a token-only success response.
+- WebSocket heartbeat scheduling uses the Core-negotiated interval.
+- Core close code 4401 remains a terminal session-loss condition.
+- Core close codes 4403 (origin rejected) and 4406 (unsupported WebSocket protocol) are terminal protocol errors instead of entering an endless reconnect loop.
+- Heartbeat timeout 4408 and ordinary transient network closes remain reconnectable.
+
+## Core-side protection
+
+- VerbaNode Core v0.12.2 publishes the mobile contract from `/api/client-info`.
+- Core regression tests verify advertised mobile operations against the actual FastAPI route table and authoritative request models.
+- Existing clients that ignore the added manifest remain compatible with Core v0.12.2.
+
+## Version / compatibility
+
+- Bumps Android version code to 18 and version name to 0.4.7.
+- Requires VerbaNode Core v0.12.2 or newer.
+- REST API remains v1 and WebSocket protocol remains v1.
+
 # VerbaNode Android v0.4.6 — Phase 3 Test Restoration
 
 ## Restored and expanded tests

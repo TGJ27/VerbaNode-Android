@@ -13,9 +13,20 @@ data class ClientInfo(
     val serverVersion: String,
     val build: String,
     val apiVersion: Int,
+    val minimumApiVersion: Int,
     val instanceId: String?,
     val instanceName: String?,
+    val authenticationLoginEndpoint: String,
+    val authenticationDeviceLoginEndpoint: String,
+    val authenticationLogoutEndpoint: String,
+    val sessionHeader: String,
+    val pairingClaimEndpoint: String,
+    val websocketEndpoint: String,
     val websocketVersion: Int,
+    val websocketTicketEndpoint: String,
+    val websocketTicketRequired: Boolean,
+    val heartbeatIntervalSeconds: Double,
+    val heartbeatTimeoutSeconds: Double,
     val certificateFingerprintSha256: String,
     val certificateSpkiSha256: String,
     val instanceDiscoveryEnabled: Boolean,
@@ -28,6 +39,7 @@ data class ClientInfo(
     val scriptDefaults: Boolean,
     val broadAudioFormats: Boolean,
     val knowledgeManagement: Boolean,
+    val mobileContract: MobileContract,
 )
 
 data class AuthSession(
@@ -35,6 +47,11 @@ data class AuthSession(
     val sessionId: String?,
     val clientName: String?,
     val deviceId: String?,
+    val serverVersion: String,
+    val apiVersion: Int,
+    val websocketProtocolVersion: Int,
+    val heartbeatIntervalSeconds: Double,
+    val heartbeatTimeoutSeconds: Double,
 )
 
 data class Agent(
@@ -99,19 +116,32 @@ fun parseClientInfo(json: JSONObject): ClientInfo {
     val server = json.requireObject("server", CLIENT_INFO_CONTEXT)
     val api = json.requireObject("api", CLIENT_INFO_CONTEXT)
     val instance = json.optionalObject("instance", CLIENT_INFO_CONTEXT)
+    val authentication = json.requireObject("authentication", CLIENT_INFO_CONTEXT)
     val ws = json.requireObject("websocket", CLIENT_INFO_CONTEXT)
     val tls = json.requireObject("tls", CLIENT_INFO_CONTEXT)
     val discovery = json.requireObject("discovery", CLIENT_INFO_CONTEXT)
     val features = json.requireObject("features", CLIENT_INFO_CONTEXT)
+    val mobileContract = parseMobileContract(json.requireObject("mobile_contract", CLIENT_INFO_CONTEXT))
 
     return ClientInfo(
         product = json.requireString("product", CLIENT_INFO_CONTEXT),
         serverVersion = server.requireString("version", "$CLIENT_INFO_CONTEXT.server"),
         build = server.requireString("build", "$CLIENT_INFO_CONTEXT.server"),
         apiVersion = api.requireInt("version", "$CLIENT_INFO_CONTEXT.api"),
+        minimumApiVersion = api.requireInt("minimum_supported_version", "$CLIENT_INFO_CONTEXT.api"),
         instanceId = instance?.optionalString("id", "$CLIENT_INFO_CONTEXT.instance"),
         instanceName = instance?.optionalString("name", "$CLIENT_INFO_CONTEXT.instance"),
+        authenticationLoginEndpoint = authentication.requireString("login_endpoint", "$CLIENT_INFO_CONTEXT.authentication"),
+        authenticationDeviceLoginEndpoint = authentication.requireString("device_login_endpoint", "$CLIENT_INFO_CONTEXT.authentication"),
+        authenticationLogoutEndpoint = authentication.requireString("logout_endpoint", "$CLIENT_INFO_CONTEXT.authentication"),
+        sessionHeader = authentication.requireString("session_header", "$CLIENT_INFO_CONTEXT.authentication"),
+        pairingClaimEndpoint = authentication.requireString("pairing_claim_endpoint", "$CLIENT_INFO_CONTEXT.authentication"),
+        websocketEndpoint = ws.requireString("endpoint", "$CLIENT_INFO_CONTEXT.websocket"),
         websocketVersion = ws.requireInt("protocol_version", "$CLIENT_INFO_CONTEXT.websocket"),
+        websocketTicketEndpoint = ws.requireString("ticket_endpoint", "$CLIENT_INFO_CONTEXT.websocket"),
+        websocketTicketRequired = ws.requireBoolean("ticket_required", "$CLIENT_INFO_CONTEXT.websocket"),
+        heartbeatIntervalSeconds = ws.requirePositiveDouble("heartbeat_interval_seconds", "$CLIENT_INFO_CONTEXT.websocket"),
+        heartbeatTimeoutSeconds = ws.requirePositiveDouble("heartbeat_timeout_seconds", "$CLIENT_INFO_CONTEXT.websocket"),
         certificateFingerprintSha256 = requireSha256(
             tls.requireString("certificate_fingerprint_sha256", "$CLIENT_INFO_CONTEXT.tls"),
             "certificate_fingerprint_sha256",
@@ -132,6 +162,7 @@ fun parseClientInfo(json: JSONObject): ClientInfo {
         scriptDefaults = features.requireBoolean("script_defaults", "$CLIENT_INFO_CONTEXT.features"),
         broadAudioFormats = features.requireBoolean("broad_audio_formats", "$CLIENT_INFO_CONTEXT.features"),
         knowledgeManagement = features.requireBoolean("knowledge_management", "$CLIENT_INFO_CONTEXT.features"),
+        mobileContract = mobileContract,
     )
 }
 
@@ -139,12 +170,46 @@ fun ClientInfo.requireAndroidCompatibility() {
     if (product != "VerbaNode") {
         protocolError(CLIENT_INFO_CONTEXT, "the selected server identifies as '$product', not VerbaNode")
     }
-    if (apiVersion != 1 || websocketVersion != 1) {
-        protocolError(CLIENT_INFO_CONTEXT, "unsupported protocol versions (API $apiVersion, WS $websocketVersion)")
+    if (!(minimumApiVersion <= AndroidCoreContract.API_VERSION && AndroidCoreContract.API_VERSION <= apiVersion)) {
+        protocolError(CLIENT_INFO_CONTEXT, "Android API ${AndroidCoreContract.API_VERSION} is outside server range $minimumApiVersion..$apiVersion")
     }
+    if (websocketVersion != AndroidCoreContract.WEBSOCKET_PROTOCOL_VERSION) {
+        protocolError(CLIENT_INFO_CONTEXT, "unsupported WebSocket protocol version $websocketVersion")
+    }
+    if (authenticationLoginEndpoint != AndroidCoreContract.endpoint("auth_login").path ||
+        authenticationDeviceLoginEndpoint != AndroidCoreContract.endpoint("auth_device_login").path ||
+        authenticationLogoutEndpoint != AndroidCoreContract.endpoint("auth_logout").path
+    ) {
+        protocolError(CLIENT_INFO_CONTEXT, "authentication endpoint contract changed")
+    }
+    if (sessionHeader != AndroidCoreContract.SESSION_HEADER) protocolError(CLIENT_INFO_CONTEXT, "session header changed to '$sessionHeader'")
+    if (pairingClaimEndpoint != AndroidCoreContract.endpoint("pairing_claim").path) protocolError(CLIENT_INFO_CONTEXT, "pairing claim endpoint changed to '$pairingClaimEndpoint'")
+    if (websocketEndpoint != AndroidCoreContract.WEBSOCKET_ENDPOINT || websocketTicketEndpoint != AndroidCoreContract.WEBSOCKET_TICKET_ENDPOINT || !websocketTicketRequired) {
+        protocolError(CLIENT_INFO_CONTEXT, "WebSocket connection contract changed")
+    }
+    AndroidCoreContract.validate(mobileContract)
     if (!(mobilePairing && trustedDevices && audioLibrary && configurationOptions && scriptQueueLoop && typeToTalkQueue && scriptDefaults && knowledgeManagement)) {
-        protocolError(CLIENT_INFO_CONTEXT, "VerbaNode Core v0.12.0 or newer capabilities are required")
+        protocolError(CLIENT_INFO_CONTEXT, "required VerbaNode mobile capabilities are unavailable")
     }
+}
+
+fun parseAuthSession(payload: JSONObject, context: String = "/api/auth/login"): AuthSession {
+    val apiVersion = payload.requireInt("api_version", context)
+    val websocketVersion = payload.requireInt("websocket_protocol_version", context)
+    if (apiVersion != AndroidCoreContract.API_VERSION) protocolError(context, "server granted API version $apiVersion")
+    if (websocketVersion != AndroidCoreContract.WEBSOCKET_PROTOCOL_VERSION) protocolError(context, "server granted WebSocket protocol $websocketVersion")
+    val session = payload.requireObject("session", context)
+    return AuthSession(
+        token = payload.requireString("token", context),
+        sessionId = session.optionalString("session_id", "$context.session"),
+        clientName = session.optionalString("client_name", "$context.session"),
+        deviceId = session.optionalString("device_id", "$context.session"),
+        serverVersion = payload.requireString("server_version", context),
+        apiVersion = apiVersion,
+        websocketProtocolVersion = websocketVersion,
+        heartbeatIntervalSeconds = payload.requirePositiveDouble("heartbeat_interval_seconds", context),
+        heartbeatTimeoutSeconds = payload.requirePositiveDouble("heartbeat_timeout_seconds", context),
+    )
 }
 
 private fun parseAgent(value: JSONObject, context: String): Agent {

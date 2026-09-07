@@ -1,5 +1,9 @@
 # VerbaNode Android
 
+## v0.4.7 Phase 4 Core ↔ Android contract hardening
+
+Adds an explicit Core ↔ Android compatibility boundary. Android validates the Core v0.12.2+ mobile contract before authentication, checks every REST method/path against the declared operation set, validates critical auth/pairing fields, uses negotiated heartbeat timing, and treats WebSocket 4403/4406 as terminal protocol failures instead of reconnecting forever.
+
 ## v0.4.6 Phase 3 test restoration
 
 Restores useful legacy test intent into the canonical `src/test/kotlin` tree and expands coverage for protocol models/API requests, Push-to-Talk WAV encoding, connection reconnect policy, TLS identity validation, and QR pairing parsing. CI now runs JVM unit tests as an explicit gate, publishes their reports, and only builds the APK after the test task succeeds.
@@ -14,13 +18,13 @@ Production and test Kotlin now each have one canonical source root. Gradle compi
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.4.6  
-**Required Core:** VerbaNode v0.12.0+  
+**Current version:** v0.4.7  
+**Required Core:** VerbaNode v0.12.2+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.6 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.7 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
@@ -50,7 +54,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Connection flow
 
-1. Start VerbaNode Core v0.12.0 or newer on the Windows PC.
+1. Start VerbaNode Core v0.12.2 or newer on the Windows PC.
 2. Put the phone and PC on the same LAN/Wi-Fi.
 3. Open VerbaNode Android.
 4. Use **Scan Wi-Fi** (single 6.5-second scan), scan a QR pairing code, select a saved server, or enter the HTTPS address manually.
@@ -60,7 +64,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.4.6 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.4.7 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -96,12 +100,12 @@ build_release_apk.bat
 ## Architecture
 
 ```text
-VerbaNode Core v0.12.0+ (Windows)
+VerbaNode Core v0.12.2+ (Windows)
         │
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.4.6
+VerbaNode Android v0.4.7
         │
         ├── Home / system dashboard
         ├── Chat / PTT
@@ -120,6 +124,16 @@ VerbaNode Android v0.4.6
 Core remains authoritative. Android is a management client and never duplicates the Hybrid RAG backend.
 
 
+
+### v0.4.7 Phase 4 Core ↔ Android contract hardening
+
+- Requires Core v0.12.2+ and validates its versioned `mobile_contract` before authentication.
+- Compares all 108 Android REST method/path operations against Core's advertised route manifest.
+- Validates API/WS versions, session header, WebSocket paths, and critical auth/pairing/bootstrap field contracts.
+- Rejects undeclared Android REST requests before network transmission.
+- Requires negotiated metadata in auth grants and uses Core-provided heartbeat timing for WebSocket keepalive.
+- Treats 4403 origin rejection and 4406 protocol incompatibility as terminal contract errors; 4408 heartbeat timeout remains reconnectable.
+- Core v0.12.2 regression-tests the manifest against its real FastAPI route table and Pydantic request models.
 
 ### v0.4.6 Phase 3 test restoration
 

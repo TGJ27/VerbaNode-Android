@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 class VerbaNodeWebSocket(
     private val api: VerbaNodeApi,
     private val sessionToken: String,
+    private val heartbeatIntervalSeconds: Double,
     private val onEvent: (String, JSONObject?) -> Unit,
     private val onState: (Boolean, String) -> Unit,
     private val onProtocolError: (String) -> Unit,
@@ -28,7 +29,7 @@ class VerbaNodeWebSocket(
         if (closed) return
         try {
             val ticket = api.wsTicket(sessionToken)
-            val wsUrl = api.baseUrl.replaceFirst("https://", "wss://") + "/ws?ticket=" + java.net.URLEncoder.encode(ticket, "UTF-8")
+            val wsUrl = api.baseUrl.replaceFirst("https://", "wss://") + AndroidCoreContract.WEBSOCKET_ENDPOINT + "?ticket=" + java.net.URLEncoder.encode(ticket, "UTF-8")
             val request = Request.Builder().url(wsUrl).build()
             socket = api.client.newWebSocket(request, listener)
         } catch (error: Exception) {
@@ -62,7 +63,17 @@ class VerbaNodeWebSocket(
             heartbeat?.cancel(false)
             heartbeat = null
             onState(false, reason.ifBlank { "Disconnected" })
-            if (shouldReconnectAfterClose(code)) scheduleReconnect() else onSessionLost()
+            when (webSocketCloseAction(code)) {
+                WebSocketCloseAction.RECONNECT -> scheduleReconnect()
+                WebSocketCloseAction.SESSION_LOST -> onSessionLost()
+                WebSocketCloseAction.PROTOCOL_ERROR -> onProtocolError(
+                    when (code) {
+                        AndroidCoreContract.WS_CLOSE_PROTOCOL_UNSUPPORTED -> "VerbaNode WebSocket protocol is incompatible with this Android version"
+                        AndroidCoreContract.WS_CLOSE_ORIGIN_REJECTED -> "VerbaNode rejected the native WebSocket connection"
+                        else -> reason.ifBlank { "VerbaNode WebSocket contract error" }
+                    },
+                )
+            }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -78,13 +89,17 @@ class VerbaNodeWebSocket(
         heartbeat = scheduler.scheduleAtFixedRate({
             if (!closed) {
                 val payload = JSONObject()
-                    .put("protocol", 1)
+                    .put("protocol", AndroidCoreContract.WEBSOCKET_PROTOCOL_VERSION)
                     .put("type", "command.heartbeat")
                     .put("request_id", UUID.randomUUID().toString())
                 webSocket.send(payload.toString())
             }
-        }, 10, 15, TimeUnit.SECONDS)
+        }, heartbeatIntervalMillis(), heartbeatIntervalMillis(), TimeUnit.MILLISECONDS)
     }
+
+
+    private fun heartbeatIntervalMillis(): Long =
+        (heartbeatIntervalSeconds * 1000.0).toLong().coerceAtLeast(1_000L)
 
     private fun scheduleReconnect() {
         if (closed) return
