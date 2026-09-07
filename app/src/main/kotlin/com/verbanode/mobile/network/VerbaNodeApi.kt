@@ -9,7 +9,6 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
-import okio.source
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
@@ -22,6 +21,26 @@ class VerbaNodeApi(
 ) {
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
     private fun pathSegment(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
+
+    private fun streamingMultipart(
+        filename: String,
+        mimeType: String,
+        contentLength: Long?,
+        openStream: () -> InputStream,
+    ): MultipartBody {
+        val media = mimeType.ifBlank { "application/octet-stream" }.toMediaType()
+        val source = StreamUploadSource(contentLength, openStream)
+        val fileBody = object : RequestBody() {
+            override fun contentType() = media
+            override fun contentLength(): Long = source.lengthOrUnknown()
+            override fun writeTo(sink: BufferedSink) {
+                source.writeTo(sink.outputStream())
+            }
+        }
+        return MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", filename, fileBody)
+            .build()
+    }
 
     private fun buildRequest(
         path: String,
@@ -252,16 +271,7 @@ class VerbaNodeApi(
         contentLength: Long?,
         openStream: () -> InputStream,
     ): JSONObject {
-        val media = mimeType.ifBlank { "application/octet-stream" }.toMediaType()
-        val fileBody = object : RequestBody() {
-            override fun contentType() = media
-            override fun contentLength(): Long = contentLength?.takeIf { it >= 0L } ?: -1L
-            override fun writeTo(sink: BufferedSink) {
-                openStream().source().use { source -> sink.writeAll(source) }
-            }
-        }
-        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("file", filename, fileBody).build()
+        val multipart = streamingMultipart(filename, mimeType, contentLength, openStream)
         return request("/api/knowledge/libraries/$libraryId/documents", "POST", sessionToken, body = multipart)
     }
 
@@ -338,11 +348,16 @@ class VerbaNodeApi(
 
     fun backupStatus(sessionToken: String): JSONObject = request("/api/backup/status", sessionToken = sessionToken)
     fun downloadBackup(sessionToken: String): ByteArray = requestBytes("/api/backup", sessionToken)
-    fun restoreBackup(sessionToken: String, bytes: ByteArray, filename: String): JSONObject {
-        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("file", filename, bytes.toRequestBody("application/zip".toMediaType())).build()
+    fun restoreBackup(
+        sessionToken: String,
+        filename: String,
+        contentLength: Long?,
+        openStream: () -> InputStream,
+    ): JSONObject {
+        val multipart = streamingMultipart(filename, "application/zip", contentLength, openStream)
         return request("/api/restore", "POST", sessionToken, body = multipart)
     }
+
 
 
     fun configurationOptions(sessionToken: String): JSONObject = request("/api/configuration-options", sessionToken = sessionToken)
@@ -352,12 +367,18 @@ class VerbaNodeApi(
     )
 
     fun audioLibrary(sessionToken: String): JSONObject = request("/api/audio-library", sessionToken = sessionToken)
-    fun uploadAudio(sessionToken: String, bytes: ByteArray, filename: String, mimeType: String): JSONObject {
-        val media = (mimeType.ifBlank { if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "audio/wav" }).toMediaType()
-        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("file", filename, bytes.toRequestBody(media)).build()
+    fun uploadAudio(
+        sessionToken: String,
+        filename: String,
+        mimeType: String,
+        contentLength: Long?,
+        openStream: () -> InputStream,
+    ): JSONObject {
+        val normalizedMime = mimeType.ifBlank { if (filename.lowercase().endsWith(".mp3")) "audio/mpeg" else "application/octet-stream" }
+        val multipart = streamingMultipart(filename, normalizedMime, contentLength, openStream)
         return request("/api/audio-library/upload", "POST", sessionToken, body = multipart)
     }
+
     fun playAudio(sessionToken: String, name: String): JSONObject = request("/api/audio-library/${pathSegment(name)}/play", "POST", sessionToken)
     fun stopAudio(sessionToken: String): JSONObject = request("/api/audio-library/stop", "POST", sessionToken)
     fun renameAudio(sessionToken: String, name: String, newName: String): JSONObject = request(

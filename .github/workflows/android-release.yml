@@ -29,6 +29,15 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/verbanode-release.jks"
       - name: Run JVM unit tests
         run: gradle --no-daemon clean testDebugUnitTest --stacktrace
+      - name: Run release lint
+        run: gradle --no-daemon lintRelease --stacktrace
+      - name: Upload release lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VerbaNode-Android-v0.4.8-release-lint-reports
+          path: app/build/reports/lint-results-release.*
+          if-no-files-found: error
       - name: Build signed release APK
         env:
           VN_KEYSTORE_PATH: ${{ runner.temp }}/verbanode-release.jks
@@ -36,7 +45,15 @@ jobs:
           VN_KEY_ALIAS: ${{ secrets.VERBANODE_KEY_ALIAS }}
           VN_KEY_PASSWORD: ${{ secrets.VERBANODE_KEY_PASSWORD }}
         run: gradle --no-daemon assembleRelease --stacktrace
+      - name: Verify APK signature and checksum
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/VerbaNode-Android-v0.4.8.apk
+          sha256sum dist/VerbaNode-Android-v0.4.8.apk > dist/VerbaNode-Android-v0.4.8.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: VerbaNode-Android-v0.4.7-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: VerbaNode-Android-v0.4.8-release-apk
+          path: |
+            dist/VerbaNode-Android-v0.4.8.apk
+            dist/VerbaNode-Android-v0.4.8.apk.sha256

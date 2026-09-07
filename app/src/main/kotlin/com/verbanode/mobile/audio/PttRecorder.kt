@@ -28,18 +28,30 @@ class PttRecorder {
             AudioFormat.ENCODING_PCM_16BIT,
         )
         require(minimum > 0) { "Android could not initialize the microphone" }
-        val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            minimum.coerceAtLeast(4096) * 2,
-        )
-        require(audioRecord.state == AudioRecord.STATE_INITIALIZED) { "Microphone initialization failed" }
+        var candidate: AudioRecord? = null
+        try {
+            val audioRecord = AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minimum.coerceAtLeast(4096) * 2,
+            )
+            candidate = audioRecord
+            check(audioRecord.state == AudioRecord.STATE_INITIALIZED) { "Microphone initialization failed" }
+            audioRecord.startRecording()
+        } catch (error: SecurityException) {
+            runCatching { candidate?.release() }
+            throw IllegalStateException("Microphone permission is not available", error)
+        } catch (error: RuntimeException) {
+            runCatching { candidate?.release() }
+            throw error
+        }
+
+        val audioRecord = checkNotNull(candidate)
         pcm = ByteArrayOutputStream()
         recorder = audioRecord
         recording.set(true)
-        audioRecord.startRecording()
         worker = thread(name = "VerbaNode-PTT", isDaemon = true) {
             val buffer = ByteArray(minimum.coerceAtLeast(4096))
             while (recording.get()) {

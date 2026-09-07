@@ -12,6 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class VerbaNodeApiProtocolTest {
@@ -162,6 +164,73 @@ class VerbaNodeApiProtocolTest {
         assertProtocolError {
             apiReturning("{\"id\":1}").conversation("session", 1)
         }
+    }
+
+    @Test
+    fun audioUploadStreamsSelectedFileInsteadOfPrebufferingIt() {
+        val opens = AtomicInteger(0)
+        val captured = AtomicReference<String>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                assertEquals(0, opens.get())
+                assertTrue(request.body!!.contentLength() > 5L)
+                assertEquals(0, opens.get())
+                val buffer = okio.Buffer()
+                request.body!!.writeTo(buffer)
+                captured.set(buffer.readUtf8())
+                assertEquals(1, opens.get())
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("{}".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        api.uploadAudio("session", "clip.mp3", "audio/mpeg", 5L) {
+            opens.incrementAndGet()
+            ByteArrayInputStream("hello".toByteArray())
+        }
+
+        assertTrue(captured.get().contains("clip.mp3"))
+        assertTrue(captured.get().contains("hello"))
+    }
+
+    @Test
+    fun backupRestoreStreamsSelectedArchiveInsteadOfPrebufferingIt() {
+        val opens = AtomicInteger(0)
+        val seen = AtomicReference<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                seen.set(request)
+                assertEquals(0, opens.get())
+                val buffer = okio.Buffer()
+                request.body!!.writeTo(buffer)
+                assertEquals(1, opens.get())
+                assertTrue(buffer.readUtf8().contains("backup-bytes"))
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("{}".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        api.restoreBackup("session", "backup.zip", 12L) {
+            opens.incrementAndGet()
+            ByteArrayInputStream("backup-bytes".toByteArray())
+        }
+
+        assertEquals("POST", seen.get().method)
+        assertEquals("/api/restore", seen.get().url.encodedPath)
     }
 
 }

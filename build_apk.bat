@@ -16,7 +16,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-call gradlew.bat clean testDebugUnitTest assembleDebug
+call gradlew.bat clean testDebugUnitTest lintDebug assembleDebug
 if errorlevel 1 (
   echo Android build failed.
   pause

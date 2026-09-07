@@ -1,5 +1,9 @@
 # VerbaNode Android
 
+## v0.4.8 Cleanup + release hardening
+
+Streams Audio Library uploads and backup restores directly from Android document storage instead of materializing full files in memory, centralizes file-transfer plumbing outside `AppViewModel`, adds Android lint as a CI/release gate, and verifies signed release APKs with SHA-256 artifacts. R8 remains intentionally disabled until a dedicated minified release/device verification pass.
+
 ## v0.4.7 Phase 4 Core ↔ Android contract hardening
 
 Adds an explicit Core ↔ Android compatibility boundary. Android validates the Core v0.12.2+ mobile contract before authentication, checks every REST method/path against the declared operation set, validates critical auth/pairing fields, uses negotiated heartbeat timing, and treats WebSocket 4403/4406 as terminal protocol failures instead of reconnecting forever.
@@ -18,13 +22,13 @@ Production and test Kotlin now each have one canonical source root. Gradle compi
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.4.7  
+**Current version:** v0.4.8  
 **Required Core:** VerbaNode v0.12.2+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.7 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.4.8 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
@@ -41,6 +45,7 @@ The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dash
   - see background dense-index progress
 - Scripts and playback queue
 - Audio Library and Type to Talk
+  - selected audio uploads stream from document storage instead of being fully buffered in phone memory
 - Plugins
 - Conversation/STT/TTS settings
 - Host audio devices and tests
@@ -48,6 +53,7 @@ The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dash
 - Trusted devices/pairing
 - Diagnostics/export
 - Backup/restore
+  - restore ZIPs stream from document storage instead of being fully buffered in phone memory
 - Core/client status
 
 The app intentionally does **not** provide cloud remote access and does not perform document parsing, OCR, embeddings or vector search on the phone. Those operations run in VerbaNode Core.
@@ -64,7 +70,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.4.7 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.4.8 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -105,7 +111,7 @@ VerbaNode Core v0.12.2+ (Windows)
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.4.7
+VerbaNode Android v0.4.8
         │
         ├── Home / system dashboard
         ├── Chat / PTT

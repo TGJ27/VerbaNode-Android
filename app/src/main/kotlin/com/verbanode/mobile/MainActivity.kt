@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -20,6 +21,34 @@ class MainActivity : ComponentActivity() {
     private var startDiscoveryAfterPermission = false
     private var pendingPairingLink: String? = null
     private var pendingDocumentBytes: ByteArray? = null
+
+    private data class SelectedDocument(
+        val uri: Uri,
+        val filename: String,
+        val mimeType: String,
+        val contentLength: Long?,
+    )
+
+    private fun selectedDocument(uri: Uri, fallbackName: String, fallbackMime: String): SelectedDocument {
+        var filename: String? = null
+        var size: Long? = null
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { index ->
+                    if (!cursor.isNull(index)) filename = cursor.getString(index)
+                }
+                cursor.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { index ->
+                    if (!cursor.isNull(index)) size = cursor.getLong(index)
+                }
+            }
+        }
+        return SelectedDocument(
+            uri = uri,
+            filename = filename?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment ?: fallbackName,
+            mimeType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: fallbackMime,
+            contentLength = size?.takeIf { it >= 0L },
+        )
+    }
     private val createDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val bytes = pendingDocumentBytes
         pendingDocumentBytes = null
@@ -31,42 +60,25 @@ class MainActivity : ComponentActivity() {
     }
     private val openAudio = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching {
-                val filename = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) cursor.getString(0) else null
-                } ?: uri.lastPathSegment ?: "audio.wav"
-                val mime = contentResolver.getType(uri) ?: "audio/*"
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not open audio file")
-                Triple(bytes, filename, mime)
-            }.onSuccess { (bytes, filename, mime) -> viewModel.uploadAudio(bytes, filename, mime) }
-                .onFailure { viewModel.reportError(it.message ?: "Could not read audio file") }
+            runCatching { selectedDocument(uri, "audio", "application/octet-stream") }
+                .onSuccess { file -> viewModel.uploadAudio(file.uri, file.filename, file.mimeType, file.contentLength) }
+                .onFailure { viewModel.reportError(it.message ?: "Could not read audio file metadata") }
         }
     }
 
     private val openKnowledge = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching {
-                var filename: String? = null
-                var size: Long? = null
-                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { filename = cursor.getString(it) }
-                        cursor.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { index -> if (!cursor.isNull(index)) size = cursor.getLong(index) }
-                    }
-                }
-                val resolvedName = filename ?: uri.lastPathSegment ?: "knowledge-document"
-                val mime = contentResolver.getType(uri) ?: "application/octet-stream"
-                Triple(resolvedName, mime, size)
-            }.onSuccess { (filename, mime, size) -> viewModel.uploadKnowledgeDocument(uri, filename, mime, size) }
-                .onFailure { viewModel.reportError(it.message ?: "Could not read knowledge document") }
+            runCatching { selectedDocument(uri, "knowledge-document", "application/octet-stream") }
+                .onSuccess { file -> viewModel.uploadKnowledgeDocument(file.uri, file.filename, file.mimeType, file.contentLength) }
+                .onFailure { viewModel.reportError(it.message ?: "Could not read knowledge document metadata") }
         }
     }
 
     private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not open backup") }
-                .onSuccess { bytes -> viewModel.restoreBackup(bytes, uri.lastPathSegment ?: "verbanode-backup.zip") }
-                .onFailure { viewModel.reportError(it.message ?: "Could not read backup") }
+            runCatching { selectedDocument(uri, "verbanode-backup.zip", "application/zip") }
+                .onSuccess { file -> viewModel.restoreBackup(file.uri, file.filename, file.contentLength) }
+                .onFailure { viewModel.reportError(it.message ?: "Could not read backup metadata") }
         }
     }
 

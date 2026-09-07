@@ -19,6 +19,7 @@ import com.verbanode.mobile.network.VerbaNodeWebSocket
 import com.verbanode.mobile.pairing.parsePairingLink
 import com.verbanode.mobile.storage.ProfileStore
 import com.verbanode.mobile.storage.ServerProfile
+import com.verbanode.mobile.transfer.ContentTransferCoordinator
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +42,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val store = ProfileStore(application)
     private val recorder = PttRecorder()
+    private val transfers = ContentTransferCoordinator(application.contentResolver) { requireApiSession() }
     private val _ui = MutableStateFlow(MobileUiState())
     val ui: StateFlow<MobileUiState> = _ui.asStateFlow()
 
@@ -707,9 +709,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun exportAgent(agentId: Int, onReady: (ByteArray, String, String) -> Unit) = runBusy {
-        val (localApi, token) = requireApiSession()
-        val bytes = withContext(Dispatchers.IO) { localApi.agentBackup(token, agentId) }
-        onReady(bytes, "verbanode-agent-$agentId.json", "application/json")
+        val download = withContext(Dispatchers.IO) { transfers.exportAgent(agentId) }
+        onReady(download.bytes, download.filename, download.mimeType)
     }
 
     private suspend fun loadKnowledgeInternal(preferredLibraryId: Int? = null) {
@@ -754,14 +755,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun uploadKnowledgeDocument(uri: Uri, filename: String, mimeType: String, contentLength: Long?) = runBusy {
         val libraryId = _ui.value.selectedKnowledgeLibraryId ?: error("Select a Knowledge Library first")
-        val resolver = getApplication<Application>().contentResolver
-        val (localApi, token) = requireApiSession()
-        withContext(Dispatchers.IO) {
-            localApi.uploadKnowledgeDocument(token, libraryId, filename, mimeType, contentLength) {
-                resolver.openInputStream(uri) ?: error("Could not open knowledge document")
-            }
-        }
-        loadKnowledgeInternal(libraryId); _ui.update { it.copy(notice = "$filename queued for indexing.") }
+        withContext(Dispatchers.IO) { transfers.uploadKnowledgeDocument(libraryId, uri, filename, mimeType, contentLength) }
+        loadKnowledgeInternal(libraryId)
+        _ui.update { it.copy(notice = "$filename queued for indexing.") }
     }
 
     fun deleteKnowledgeDocument(id: Int) = runBusy {
@@ -906,8 +902,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openAudio() = runBusy { loadAudioLibraryInternal(); _ui.update { it.copy(screen = AppScreen.AUDIO) } }
-    fun uploadAudio(bytes: ByteArray, filename: String, mimeType: String) = runBusy {
-        val (a,t)=requireApiSession(); withContext(Dispatchers.IO){a.uploadAudio(t,bytes,filename,mimeType)}; loadAudioLibraryInternal(); _ui.update{it.copy(notice="Audio uploaded.")}
+    fun uploadAudio(uri: Uri, filename: String, mimeType: String, contentLength: Long?) = runBusy {
+        withContext(Dispatchers.IO) { transfers.uploadAudio(uri, filename, mimeType, contentLength) }
+        loadAudioLibraryInternal()
+        _ui.update { it.copy(notice = "Audio uploaded.") }
     }
     fun playAudio(name: String) = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.playAudio(t,name)}; loadAudioLibraryInternal() }
     fun stopAudio() = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.stopAudio(t)}; loadAudioLibraryInternal() }
@@ -965,16 +963,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun runDiagnosticsSelfTest() = runBusy { val(a,t)=requireApiSession(); val value=withContext(Dispatchers.IO){a.runSelfTest(t)}; _ui.update{it.copy(diagnosticsStatus=(it.diagnosticsStatus ?: JSONObject()).put("self_test",value), notice="Self-test complete.")} }
     fun clearDiagnosticLogs() = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.clearDiagnosticLogs(t)}; openDiagnosticsDirect() }
     private suspend fun openDiagnosticsDirect() { val(a,t)=requireApiSession(); _ui.update{it.copy(diagnosticsStatus=withContext(Dispatchers.IO){a.diagnostics(t)})} }
-    fun exportDiagnostics(onReady:(ByteArray,String,String)->Unit) = runBusy { val(a,t)=requireApiSession(); val bytes=withContext(Dispatchers.IO){a.diagnosticsExport(t)}; onReady(bytes,"verbanode-diagnostics.zip","application/zip") }
+    fun exportDiagnostics(onReady: (ByteArray, String, String) -> Unit) = runBusy {
+        val download = withContext(Dispatchers.IO) { transfers.exportDiagnostics() }
+        onReady(download.bytes, download.filename, download.mimeType)
+    }
 
     fun openData() = runBusy {
         val(a,t)=requireApiSession(); val value=withContext(Dispatchers.IO){a.backupStatus(t)}
         _ui.update{it.copy(screen=AppScreen.DATA, backupStatus=value)}
     }
-    fun exportBackup(onReady:(ByteArray,String,String)->Unit) = runBusy { val(a,t)=requireApiSession(); val bytes=withContext(Dispatchers.IO){a.downloadBackup(t)}; onReady(bytes,"verbanode-backup.zip","application/zip") }
-    fun restoreBackup(bytes: ByteArray, filename: String) = runBusy {
-        val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.restoreBackup(t,bytes,filename)}
-        _ui.update{it.copy(notice="Backup restored. Restart VerbaNode Core before continuing.")}
+    fun exportBackup(onReady: (ByteArray, String, String) -> Unit) = runBusy {
+        val download = withContext(Dispatchers.IO) { transfers.exportBackup() }
+        onReady(download.bytes, download.filename, download.mimeType)
+    }
+    fun restoreBackup(uri: Uri, filename: String, contentLength: Long?) = runBusy {
+        withContext(Dispatchers.IO) { transfers.restoreBackup(uri, filename, contentLength) }
+        _ui.update { it.copy(notice = "Backup restored. Restart VerbaNode Core before continuing.") }
     }
 
     fun backHome() = openHome()

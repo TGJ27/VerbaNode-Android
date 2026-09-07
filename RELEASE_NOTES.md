@@ -1,3 +1,32 @@
+# VerbaNode Android v0.4.8 — Cleanup + Release Hardening
+
+## Streaming / memory safety
+
+- Audio Library uploads now stream selected files from Android document storage into OkHttp multipart requests instead of calling `readBytes()`.
+- Backup restore now streams the selected ZIP directly into the multipart request instead of holding the complete archive in a `ByteArray`.
+- Knowledge uploads, audio uploads, and backup restore share one lazy stream request-body implementation that opens the source only when the HTTP body is actually written.
+- Selected document metadata (display name, MIME type, and optional length) is resolved without opening the full file.
+
+## Architecture cleanup
+
+- Moves file-transfer/session plumbing out of `AppViewModel` into `ContentTransferCoordinator`.
+- Centralizes stream-copy behavior in `StreamUploadSource` with focused regression coverage.
+- Keeps Core authoritative for upload size enforcement and restore validation; no Core endpoint or protocol change is required.
+
+## Release hardening
+
+- Adds `lintDebug` to normal CI and publishes lint reports.
+- Adds `lintRelease` before signed release builds and publishes release lint reports.
+- Signed GitHub release builds verify the APK with `apksigner`, produce a versioned APK name, and publish a SHA-256 checksum.
+- Local debug/release build helpers now run lint as part of their gating sequence.
+- R8/minification remains disabled intentionally until a dedicated minified release/device verification pass.
+
+## Version / compatibility
+
+- Bumps Android version code to 19 and version name to 0.4.8.
+- Keeps the Core requirement at VerbaNode v0.12.2+.
+- No VerbaNode Core source changes are required.
+
 # VerbaNode Android v0.4.7 — Phase 4 Core ↔ Android Contract Hardening
 
 ## Contract negotiation

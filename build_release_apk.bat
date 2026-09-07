@@ -198,7 +198,7 @@ echo.
 echo Building signed VerbaNode Android v%APP_VERSION%...
 echo.
 
-call "%~dp0gradlew.bat" clean testDebugUnitTest assembleRelease
+call "%~dp0gradlew.bat" clean testDebugUnitTest lintRelease assembleRelease
 if errorlevel 1 (
     echo.
     echo ERROR: Android release APK build failed.
