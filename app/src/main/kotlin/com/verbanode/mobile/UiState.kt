@@ -72,6 +72,7 @@ data class MobileUiState(
     val pipelineStatus: JSONObject? = null,
     val capabilityStatus: JSONObject? = null,
     val diagnosticsStatus: JSONObject? = null,
+    val diagnosticsLogs: List<JSONObject> = emptyList(),
     val backupStatus: JSONObject? = null,
     val statusText: String = "",
     val chatStatus: String = "Ready",

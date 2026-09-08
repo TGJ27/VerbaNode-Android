@@ -55,6 +55,7 @@ class ProtocolModelsTest {
                 .put("broad_audio_formats", true)
                 .put("knowledge_management", true),
         )
+        .put("mobile_contract_fingerprint", AndroidCoreContract.EXPECTED_FINGERPRINT)
         .put("mobile_contract", AndroidCoreContract.toJson())
 
     private fun assertProtocolError(block: () -> Unit) {

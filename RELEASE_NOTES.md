@@ -1,29 +1,21 @@
-# VerbaNode Android v0.5.2 — Connection + Architecture
+# VerbaNode Android v0.5.3 — Release + Diagnostics
 
-## Same-Wi-Fi discovery
+## Diagnostics
 
-- Probes remembered VerbaNode profiles immediately using their saved TLS SPKI.
-- Keeps Android NSD/mDNS discovery and retries transient resolve failures instead of silently dropping them.
-- Adds active UDP discovery protocol v1 against Core v0.12.5. UDP/mDNS metadata is treated only as a hint.
-- Adds a bounded IPv4 HTTPS fallback over the phone's local /24 window when multicast/broadcast discovery does not produce a verified result quickly.
-- Uses limited concurrency and short unauthenticated probe timeouts for subnet fallback.
-- Deduplicates results by stable Core instance ID, then TLS SPKI, then normalized URL.
+- Structured compatibility card with Android/Core/API/WebSocket/mobile-contract versions.
+- Pinned SHA-256 mobile-contract fingerprint is checked before authenticated use and displayed in Diagnostics.
+- Connection & Trust card shows the active LAN HTTPS endpoint and abbreviated public TLS SPKI hash only.
+- Core health summarizes Audio Engine, AI Engine, pipeline state and queue state.
+- Recent Core diagnostic logs are displayed with warning/error filtering and a second Android-side credential redaction pass.
+- Self-test results are shown as individual pass/warn/fail checks instead of only raw JSON.
+- Clearing the in-memory diagnostic log buffer requires confirmation.
+- Diagnostics export explains the privacy boundary and keeps Core's sanitized ZIP as the authoritative report.
 
-## Security
+## Release hardening
 
-- Every discovery candidate must pass HTTPS `/api/client-info`, Android protocol compatibility checks, and TLS certificate/SPKI verification before it is shown as connectable.
-- Discovery never sends a PIN, session token, trusted-device credential, or pairing secret.
+- Production `release` remains unminified for v0.5.3.
+- CI additionally builds an unsigned `minifiedRelease` smoke APK with R8 + resource shrinking to catch release-only regressions early.
+- Signed-release CI verifies package ID, versionCode 24, versionName 0.5.3, APK signature and SHA-256 checksum.
+- Android's canonical mobile-contract fingerprint is regression-tested against Core v0.12.6.
 
-## UX / architecture
-
-- Scan window increases from 6.5 to 10 seconds and shows staged progress: saved servers, LAN discovery, subnet fallback, complete.
-- Verified results remain visible after the scan.
-- mDNS failure is no longer fatal to the entire scan; independent fallback transports continue.
-- Connection discovery responsibilities stay isolated in the discovery package instead of growing `AppViewModel`.
-
-## Release
-
-- Version name: `0.5.2`
-- Version code: `23`
-- Recommended Core: VerbaNode v0.12.5+
-- REST API v1 and WebSocket protocol v1 remain unchanged.
+Requires VerbaNode Core v0.12.6+. REST API v1 and WebSocket protocol v1 remain unchanged.

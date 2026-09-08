@@ -1072,12 +1072,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun pullModel(name: String) = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.pullModel(t,name.trim())}; _ui.update{it.copy(notice="Model pull started. Progress will arrive over WebSocket.")} }
 
     fun openDiagnostics() = runBusy {
-        val(a,t)=requireApiSession(); val value=withContext(Dispatchers.IO){a.diagnostics(t)}
-        _ui.update{it.copy(screen=AppScreen.DIAGNOSTICS, diagnosticsStatus=value)}
+        val (a, t) = requireApiSession()
+        val value = withContext(Dispatchers.IO) { a.diagnostics(t) }
+        val logs = withContext(Dispatchers.IO) {
+            (a.diagnosticLogs(t).optJSONArray("entries") ?: JSONArray()).objectList()
+        }
+        _ui.update { it.copy(screen = AppScreen.DIAGNOSTICS, diagnosticsStatus = value, diagnosticsLogs = logs) }
     }
-    fun runDiagnosticsSelfTest() = runBusy { val(a,t)=requireApiSession(); val value=withContext(Dispatchers.IO){a.runSelfTest(t)}; _ui.update{it.copy(diagnosticsStatus=(it.diagnosticsStatus ?: JSONObject()).put("self_test",value), notice="Self-test complete.")} }
-    fun clearDiagnosticLogs() = runBusy { val(a,t)=requireApiSession(); withContext(Dispatchers.IO){a.clearDiagnosticLogs(t)}; openDiagnosticsDirect() }
-    private suspend fun openDiagnosticsDirect() { val(a,t)=requireApiSession(); _ui.update{it.copy(diagnosticsStatus=withContext(Dispatchers.IO){a.diagnostics(t)})} }
+    fun runDiagnosticsSelfTest() = runBusy {
+        val (a, t) = requireApiSession()
+        val value = withContext(Dispatchers.IO) { a.runSelfTest(t) }
+        _ui.update { it.copy(diagnosticsStatus = (it.diagnosticsStatus ?: JSONObject()).put("self_test", value), notice = "Self-test complete.") }
+    }
+    fun clearDiagnosticLogs() = runBusy {
+        val (a, t) = requireApiSession()
+        withContext(Dispatchers.IO) { a.clearDiagnosticLogs(t) }
+        openDiagnosticsDirect()
+        _ui.update { it.copy(notice = "Diagnostic logs cleared.") }
+    }
+    private suspend fun openDiagnosticsDirect() {
+        val (a, t) = requireApiSession()
+        val status = withContext(Dispatchers.IO) { a.diagnostics(t) }
+        val logs = withContext(Dispatchers.IO) {
+            (a.diagnosticLogs(t).optJSONArray("entries") ?: JSONArray()).objectList()
+        }
+        _ui.update { it.copy(diagnosticsStatus = status, diagnosticsLogs = logs) }
+    }
     fun exportDiagnostics(onReady: (ByteArray, String, String) -> Unit) = runBusy {
         val download = withContext(Dispatchers.IO) { transfers.exportDiagnostics() }
         onReady(download.bytes, download.filename, download.mimeType)

@@ -30,6 +30,7 @@ object AndroidCoreContract {
     const val WS_CLOSE_ORIGIN_REJECTED = 4403
     const val WS_CLOSE_PROTOCOL_UNSUPPORTED = 4406
     const val WS_CLOSE_HEARTBEAT_TIMEOUT = 4408
+    const val EXPECTED_FINGERPRINT = "d791c89f2bec5896127bfb4d2a274da82c5ed23c0c8b5009f088a428e74df49a"
 
     val endpoints: Map<String, ContractEndpoint> = linkedMapOf(
         "client_info" to ContractEndpoint("GET", "/api/client-info"),
@@ -136,6 +137,7 @@ object AndroidCoreContract {
         "audio_library_rename" to ContractEndpoint("PATCH", "/api/audio-library/{name:path}"),
         "audio_library_delete" to ContractEndpoint("DELETE", "/api/audio-library/{name:path}"),
         "diagnostics_get" to ContractEndpoint("GET", "/api/diagnostics"),
+        "diagnostics_logs_get" to ContractEndpoint("GET", "/api/diagnostics/logs"),
         "diagnostics_self_test" to ContractEndpoint("POST", "/api/diagnostics/self-test"),
         "diagnostics_logs_clear" to ContractEndpoint("DELETE", "/api/diagnostics/logs"),
         "diagnostics_turns_clear" to ContractEndpoint("DELETE", "/api/diagnostics/turns"),
@@ -160,8 +162,15 @@ object AndroidCoreContract {
         "auth_grant" to setOf("token", "server_version", "api_version", "websocket_protocol_version", "heartbeat_interval_seconds", "heartbeat_timeout_seconds", "session"),
         "ws_ticket" to setOf("ticket"),
         "agent_generate_role" to setOf("role", "system_prompt", "greeting"),
-        "pairing_start" to setOf("pairing_id", "pairing_uri"),
-        "pairing_claim" to setOf("device_id", "device_token"),
+        "pairing_start" to setOf(
+            "pairing_id", "short_code", "server_url", "certificate_fingerprint_sha256",
+            "certificate_spki_sha256", "expires_in_seconds", "claimed", "claimed_device_id",
+            "claimed_at", "pairing_uri", "qr_endpoint",
+        ),
+        "pairing_claim" to setOf(
+            "status", "device_id", "device_token", "device_name", "server_url",
+            "certificate_fingerprint_sha256", "certificate_spki_sha256",
+        ),
         "bootstrap" to setOf("agents", "messages", "mode"),
         "devices" to setOf("devices"),
     )
@@ -186,6 +195,25 @@ object AndroidCoreContract {
 
     fun endpoint(name: String): ContractEndpoint =
         endpoints[name] ?: error("Unknown Android Core contract operation: $name")
+
+    fun fingerprint(): String = contractFingerprint(
+        contractVersion = CONTRACT_VERSION,
+        apiVersion = API_VERSION,
+        minimumApiVersion = API_VERSION,
+        websocketProtocolVersion = WEBSOCKET_PROTOCOL_VERSION,
+        sessionHeader = SESSION_HEADER,
+        websocketEndpoint = WEBSOCKET_ENDPOINT,
+        websocketTicketEndpoint = WEBSOCKET_TICKET_ENDPOINT,
+        endpoints = endpoints.mapValues { (_, spec) -> "${spec.method} ${spec.path}" },
+        requestFields = requiredRequestFields,
+        responseFields = requiredResponseFields,
+        closeCodes = mapOf(
+            "unauthorized" to WS_CLOSE_UNAUTHORIZED,
+            "origin_rejected" to WS_CLOSE_ORIGIN_REJECTED,
+            "protocol_unsupported" to WS_CLOSE_PROTOCOL_UNSUPPORTED,
+            "heartbeat_timeout" to WS_CLOSE_HEARTBEAT_TIMEOUT,
+        ),
+    )
 
     fun matches(method: String, requestPath: String): Boolean {
         val path = requestPath.substringBefore('?')

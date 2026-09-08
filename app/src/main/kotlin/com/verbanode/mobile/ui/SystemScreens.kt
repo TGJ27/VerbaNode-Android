@@ -39,6 +39,13 @@ import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.BuildConfig
 import com.verbanode.mobile.MainActivity
+import com.verbanode.mobile.diagnostics.DiagnosticHealth
+import com.verbanode.mobile.diagnostics.abbreviateFingerprint
+import com.verbanode.mobile.diagnostics.compatibilityHealth
+import com.verbanode.mobile.diagnostics.diagnosticHealth
+import com.verbanode.mobile.diagnostics.includeDiagnosticLog
+import com.verbanode.mobile.diagnostics.safeDiagnosticMessage
+import com.verbanode.mobile.network.AndroidCoreContract
 import com.verbanode.mobile.network.TrustedDevice
 import org.json.JSONArray
 import org.json.JSONObject
@@ -324,31 +331,129 @@ internal fun DiagnosticsScreen(viewModel: AppViewModel, activity: MainActivity) 
     val state by viewModel.ui.collectAsState()
     val diagnostics = state.diagnosticsStatus ?: JSONObject()
     val snapshot = diagnostics.optJSONObject("snapshot") ?: JSONObject()
+    val compatibility = snapshot.optJSONObject("compatibility") ?: JSONObject()
+    val selfTest = diagnostics.optJSONObject("self_test")
+    val profile = state.currentProfile
+    val clientInfo = state.clientInfo
+    var warningOnly by remember { mutableStateOf(true) }
+    var confirmClearLogs by remember { mutableStateOf(false) }
+    var showRawSnapshot by remember { mutableStateOf(false) }
+
+    val remoteFingerprint = compatibility.optString("mobile_contract_fingerprint").ifBlank {
+        clientInfo?.mobileContractFingerprint.orEmpty()
+    }
+    val compatibilityHealth = compatibilityHealth(remoteFingerprint, AndroidCoreContract.EXPECTED_FINGERPRINT)
+    val visibleLogs = state.diagnosticsLogs.filter {
+        includeDiagnosticLog(it.optString("level"), warningOnly)
+    }.takeLast(80).reversed()
+
+    fun healthText(value: DiagnosticHealth): String = when (value) {
+        DiagnosticHealth.GOOD -> "Healthy"
+        DiagnosticHealth.WARN -> "Warning"
+        DiagnosticHealth.BAD -> "Problem"
+        DiagnosticHealth.UNKNOWN -> "Unknown"
+    }
+
     ManagementSubpage(viewModel, "Diagnostics") { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             item { Feedback(viewModel) }
             item {
-                DashboardCard("Health snapshot", "Core, database, audio, AI and pipeline health from the diagnostics API.") {
-                    Text(prettyJson(snapshot), style = MaterialTheme.typography.bodySmall)
+                DashboardCard("Compatibility", "Mobile/Core protocol compatibility checked before credentials are used.") {
+                    Text("Android v${BuildConfig.VERSION_NAME} · Core ${clientInfo?.serverVersion ?: profile?.lastServerVersion ?: compatibility.optString("server_version", "unknown")}", fontWeight = FontWeight.Bold)
+                    Text("API v${clientInfo?.apiVersion ?: compatibility.optInt("api_version", 0)} · WebSocket v${clientInfo?.websocketVersion ?: compatibility.optInt("websocket_protocol_version", 0)} · Mobile contract v${clientInfo?.mobileContract?.contractVersion ?: compatibility.optInt("mobile_contract_version", 0)}")
+                    Text("Contract: ${healthText(compatibilityHealth)} · ${abbreviateFingerprint(remoteFingerprint)}", modifier = Modifier.padding(top = 4.dp))
+                    if (compatibilityHealth == DiagnosticHealth.BAD) {
+                        Text("The Android and Core contract fingerprints differ. Update both components together before continuing.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+            }
+            item {
+                DashboardCard("Connection & trust", "Only the public TLS SPKI fingerprint is shown; credentials are never included.") {
+                    Text(profile?.name ?: clientInfo?.instanceName ?: "VerbaNode", fontWeight = FontWeight.Bold)
+                    Text(profile?.baseUrl ?: "No active server")
+                    Text("Connection: ${state.connectionLabel}")
+                    Text("TLS SPKI: ${abbreviateFingerprint(profile?.spkiSha256 ?: clientInfo?.certificateSpkiSha256)}")
+                    Text("Transport: LAN HTTPS/WSS · Cloud disabled", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+            item {
+                val audio = snapshot.optJSONObject("audio")?.optJSONObject("engine")
+                val ai = snapshot.optJSONObject("ai")?.optJSONObject("engine")
+                val pipeline = snapshot.optJSONObject("pipeline") ?: JSONObject()
+                val audioHealth = diagnosticHealth(audio?.takeIf { it.has("alive") }?.optBoolean("alive"), audio?.optString("error")?.ifBlank { null })
+                val aiHealth = diagnosticHealth(ai?.takeIf { it.has("alive") }?.optBoolean("alive"), ai?.optString("error")?.ifBlank { null })
+                DashboardCard("Core health", "Live health from the authenticated diagnostics API.") {
+                    Text("Audio engine: ${healthText(audioHealth)}")
+                    Text("AI engine: ${healthText(aiHealth)}")
+                    Text("Pipeline: ${pipeline.optString("state", snapshot.optString("mode", "unknown"))}")
+                    Text("Queue: ${snapshot.optString("queue_state", "unknown")}")
+                    val generated = snapshot.optString("generated_at")
+                    if (generated.isNotBlank()) Text("Snapshot: $generated", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Button(onClick = viewModel::runDiagnosticsSelfTest, modifier = Modifier.weight(1f)) { Text("Run self-test") }
                         OutlinedButton(onClick = viewModel::openDiagnostics, modifier = Modifier.weight(1f)) { Text("Refresh") }
                     }
                 }
             }
-            diagnostics.optJSONObject("self_test")?.let { selfTest -> item {
-                DashboardCard("Last self-test") { Text(prettyJson(selfTest), style = MaterialTheme.typography.bodySmall) }
-            } }
+            if (selfTest != null) item {
+                val checks = (selfTest.optJSONArray("checks") ?: JSONArray()).objectList()
+                DashboardCard("Last self-test", "${selfTest.optInt("failures", 0)} failures · ${selfTest.optInt("warnings", 0)} warnings") {
+                    Text("Overall: ${selfTest.optString("overall", "unknown").uppercase()}", fontWeight = FontWeight.Bold)
+                    checks.forEach { check ->
+                        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                        Text("${check.optString("name", "Check")}: ${check.optString("status", "unknown").uppercase()}", fontWeight = FontWeight.SemiBold)
+                        Text(check.optString("detail").take(500), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             item {
-                DashboardCard("Diagnostics data") {
-                    OutlinedButton(onClick = viewModel::clearDiagnosticLogs, modifier = Modifier.fillMaxWidth()) { Text("Clear diagnostic logs") }
+                DashboardCard("Recent sanitized logs", "Core redacts credentials and Android applies a second display-time redaction pass.") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = warningOnly, onCheckedChange = { warningOnly = it })
+                        Text("Warnings and errors only")
+                    }
+                    if (visibleLogs.isEmpty()) {
+                        Text("No matching diagnostic log entries.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        visibleLogs.take(20).forEach { entry ->
+                            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                            Text("${entry.optString("level", "INFO")} · ${entry.optString("logger", "core")}", fontWeight = FontWeight.SemiBold)
+                            Text(safeDiagnosticMessage(entry.optString("message")).take(800), style = MaterialTheme.typography.bodySmall)
+                            val timestamp = entry.optString("timestamp")
+                            if (timestamp.isNotBlank()) Text(timestamp, style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (visibleLogs.size > 20) Text("Showing newest 20 of ${visibleLogs.size} matching entries.", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
+                    }
+                    OutlinedButton(onClick = { confirmClearLogs = true }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Clear diagnostic logs") }
+                }
+            }
+            item {
+                DashboardCard("Diagnostics export", "The ZIP is generated by Core and excludes PINs, session tokens, databases, conversations, certificates/private keys, and model files.") {
                     Button(
                         onClick = { viewModel.exportDiagnostics { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    ) { Text("Export diagnostics ZIP") }
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Export sanitized diagnostics ZIP") }
+                    OutlinedButton(onClick = { showRawSnapshot = !showRawSnapshot }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Text(if (showRawSnapshot) "Hide raw health snapshot" else "Show raw health snapshot")
+                    }
+                    if (showRawSnapshot) Text(prettyJson(snapshot), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
                 }
             }
         }
+    }
+
+    if (confirmClearLogs) {
+        AlertDialog(
+            onDismissRequest = { confirmClearLogs = false },
+            title = { Text("Clear diagnostic logs?") },
+            text = { Text("This clears Core's in-memory sanitized diagnostic log buffer. It does not delete conversations, Knowledge, agents, or Windows log files.") },
+            confirmButton = { TextButton(onClick = { confirmClearLogs = false; viewModel.clearDiagnosticLogs() }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { confirmClearLogs = false }) { Text("Cancel") } },
+        )
     }
 }
 

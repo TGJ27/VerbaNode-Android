@@ -39,6 +39,7 @@ data class ClientInfo(
     val scriptDefaults: Boolean,
     val broadAudioFormats: Boolean,
     val knowledgeManagement: Boolean,
+    val mobileContractFingerprint: String,
     val mobileContract: MobileContract,
 )
 
@@ -162,6 +163,7 @@ fun parseClientInfo(json: JSONObject): ClientInfo {
         scriptDefaults = features.requireBoolean("script_defaults", "$CLIENT_INFO_CONTEXT.features"),
         broadAudioFormats = features.requireBoolean("broad_audio_formats", "$CLIENT_INFO_CONTEXT.features"),
         knowledgeManagement = features.requireBoolean("knowledge_management", "$CLIENT_INFO_CONTEXT.features"),
+        mobileContractFingerprint = requireSha256(json.requireString("mobile_contract_fingerprint", CLIENT_INFO_CONTEXT), "mobile_contract_fingerprint", CLIENT_INFO_CONTEXT),
         mobileContract = mobileContract,
     )
 }
@@ -188,6 +190,9 @@ fun ClientInfo.requireAndroidCompatibility() {
         protocolError(CLIENT_INFO_CONTEXT, "WebSocket connection contract changed")
     }
     AndroidCoreContract.validate(mobileContract)
+    if (mobileContractFingerprint != AndroidCoreContract.EXPECTED_FINGERPRINT || AndroidCoreContract.fingerprint() != AndroidCoreContract.EXPECTED_FINGERPRINT) {
+        protocolError(CLIENT_INFO_CONTEXT, "mobile contract fingerprint mismatch")
+    }
     if (!(mobilePairing && trustedDevices && audioLibrary && configurationOptions && scriptQueueLoop && typeToTalkQueue && scriptDefaults && knowledgeManagement)) {
         protocolError(CLIENT_INFO_CONTEXT, "required VerbaNode mobile capabilities are unavailable")
     }

@@ -35,6 +35,7 @@ jobs:
           sdkmanager "$PLATFORM_PACKAGE" "build-tools;37.0.0"
           test -f "$ANDROID_HOME/platforms/$PLATFORM_DIR/android.jar"
           test -x "$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          test -x "$ANDROID_HOME/build-tools/37.0.0/aapt"
           echo "Installed $PLATFORM_PACKAGE with Build Tools 37.0.0"
       - uses: gradle/actions/setup-gradle@v6
       - name: Restore signing keystore
@@ -51,7 +52,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.2-release-lint-reports
+          name: VerbaNode-Android-v0.5.3-release-lint-reports
           path: app/build/reports/lint-results-release.*
           if-no-files-found: warn
       - name: Build signed release APK
@@ -61,15 +62,22 @@ jobs:
           VN_KEY_ALIAS: ${{ secrets.VERBANODE_KEY_ALIAS }}
           VN_KEY_PASSWORD: ${{ secrets.VERBANODE_KEY_PASSWORD }}
         run: ./gradlew --no-daemon assembleRelease --stacktrace
-      - name: Verify APK signature and checksum
+      - name: Verify APK identity, signature and checksum
+        shell: bash
         run: |
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK"
+          BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
+          grep -Fq "package: name='com.verbanode.mobile'" <<<"$BADGING"
+          grep -Fq "versionCode='24'" <<<"$BADGING"
+          grep -Fq "versionName='0.5.3'" <<<"$BADGING"
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/VerbaNode-Android-v0.5.2.apk
-          sha256sum dist/VerbaNode-Android-v0.5.2.apk > dist/VerbaNode-Android-v0.5.2.apk.sha256
+          cp "$APK" dist/VerbaNode-Android-v0.5.3.apk
+          sha256sum dist/VerbaNode-Android-v0.5.3.apk > dist/VerbaNode-Android-v0.5.3.apk.sha256
       - uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.2-release-apk
+          name: VerbaNode-Android-v0.5.3-release-apk
           path: |
-            dist/VerbaNode-Android-v0.5.2.apk
-            dist/VerbaNode-Android-v0.5.2.apk.sha256
+            dist/VerbaNode-Android-v0.5.3.apk
+            dist/VerbaNode-Android-v0.5.3.apk.sha256

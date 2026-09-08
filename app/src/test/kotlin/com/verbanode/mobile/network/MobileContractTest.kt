@@ -9,6 +9,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MobileContractTest {
+
+    @Test
+    fun canonicalFingerprintMatchesCoreRelease() {
+        assertEquals(AndroidCoreContract.EXPECTED_FINGERPRINT, AndroidCoreContract.fingerprint())
+        assertTrue(AndroidCoreContract.endpoints.containsKey("diagnostics_logs_get"))
+    }
     private fun assertProtocolError(block: () -> Unit) {
         val error = runCatching(block).exceptionOrNull()
         assertNotNull("Expected protocol failure", error)
@@ -60,6 +66,7 @@ class MobileContractTest {
                 .put("broad_audio_formats", true)
                 .put("knowledge_management", true),
         )
+        .put("mobile_contract_fingerprint", AndroidCoreContract.EXPECTED_FINGERPRINT)
         .put("mobile_contract", AndroidCoreContract.toJson())
 
     @Test
@@ -68,6 +75,14 @@ class MobileContractTest {
         info.requireAndroidCompatibility()
         assertEquals(AndroidCoreContract.CONTRACT_VERSION, info.mobileContract.contractVersion)
         assertEquals(AndroidCoreContract.endpoints.size, info.mobileContract.endpoints.size)
+    }
+
+
+    @Test
+    fun fingerprintMismatchIsRejectedBeforeAuthentication() {
+        val payload = clientInfoWithContract().put("mobile_contract_fingerprint", "f".repeat(64))
+        val info = parseClientInfo(payload)
+        assertProtocolError { info.requireAndroidCompatibility() }
     }
 
     @Test

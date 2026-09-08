@@ -363,6 +363,7 @@ class VerbaNodeApi(
     )
 
     fun diagnostics(sessionToken: String): JSONObject = request("/api/diagnostics", sessionToken = sessionToken)
+    fun diagnosticLogs(sessionToken: String, limit: Int = 200): JSONObject = request("/api/diagnostics/logs?limit=${limit.coerceIn(1, 800)}", sessionToken = sessionToken)
     fun runSelfTest(sessionToken: String): JSONObject = request("/api/diagnostics/self-test", "POST", sessionToken)
     fun clearDiagnosticLogs(sessionToken: String) { request("/api/diagnostics/logs", "DELETE", sessionToken) }
     fun clearDiagnosticTurns(sessionToken: String) { request("/api/diagnostics/turns", "DELETE", sessionToken) }

@@ -356,4 +356,29 @@ class VerbaNodeApiProtocolTest {
         }
     }
 
+    @Test
+    fun diagnosticsLogsUseDeclaredReadRoute() {
+        val seen = AtomicReference<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                seen.set(chain.request())
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("{\"entries\":[],\"capacity\":800}".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        api.diagnosticLogs("session", 80)
+
+        assertEquals("GET", seen.get().method)
+        assertEquals("/api/diagnostics/logs", seen.get().url.encodedPath)
+        assertEquals("limit=80", seen.get().url.query)
+        assertTrue(AndroidCoreContract.matches("GET", "/api/diagnostics/logs?limit=80"))
+    }
+
 }
