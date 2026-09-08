@@ -9,40 +9,56 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - name: Install Android SDK 37
-        run: yes | sdkmanager "platforms;android-37" "build-tools;36.0.0"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.5.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_PACKAGES="$(sdkmanager --list --include_obsolete)"
+          if grep -Fq "platforms;android-37.0" <<<"$SDK_PACKAGES"; then
+            PLATFORM_PACKAGE="platforms;android-37.0"
+            PLATFORM_DIR="android-37.0"
+          elif grep -Fq "platforms;android-37" <<<"$SDK_PACKAGES"; then
+            PLATFORM_PACKAGE="platforms;android-37"
+            PLATFORM_DIR="android-37"
+          else
+            echo "Android SDK platform 37 is not available from this runner's sdkmanager repository." >&2
+            sdkmanager --list --include_obsolete | grep -E "platforms;android-(36|37)" || true
+            exit 1
+          fi
+          sdkmanager "$PLATFORM_PACKAGE" "build-tools;37.0.0"
+          test -f "$ANDROID_HOME/platforms/$PLATFORM_DIR/android.jar"
+          test -x "$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          echo "Installed $PLATFORM_PACKAGE with Build Tools 37.0.0"
+      - uses: gradle/actions/setup-gradle@v6
       - name: Run JVM unit tests
-        run: gradle --no-daemon clean testDebugUnitTest --stacktrace
+        run: ./gradlew --no-daemon clean testDebugUnitTest --stacktrace
       - name: Upload unit-test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.0-unit-test-reports
+          name: VerbaNode-Android-v0.5.1-unit-test-reports
           path: |
             app/build/test-results/testDebugUnitTest/**
             app/build/reports/tests/testDebugUnitTest/**
-          if-no-files-found: error
+          if-no-files-found: warn
       - name: Run Android lint
-        run: gradle --no-daemon lintDebug --stacktrace
+        run: ./gradlew --no-daemon lintDebug --stacktrace
       - name: Upload lint reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.0-lint-reports
+          name: VerbaNode-Android-v0.5.1-lint-reports
           path: app/build/reports/lint-results-debug.*
-          if-no-files-found: error
+          if-no-files-found: warn
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug --stacktrace
-      - uses: actions/upload-artifact@v4
+        run: ./gradlew --no-daemon assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.0-debug-apk
+          name: VerbaNode-Android-v0.5.1-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk

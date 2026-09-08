@@ -18,7 +18,7 @@ class MobileContractTest {
     private fun clientInfoWithContract(): JSONObject = JSONObject()
         .put("contract_version", 1)
         .put("product", "VerbaNode")
-        .put("server", JSONObject().put("version", "0.12.3").put("build", "release"))
+        .put("server", JSONObject().put("version", "0.12.4").put("build", "release"))
         .put("instance", JSONObject().put("id", "instance-1").put("name", "VerbaNode"))
         .put("api", JSONObject().put("version", 1).put("minimum_supported_version", 1))
         .put(
@@ -92,6 +92,7 @@ class MobileContractTest {
     @Test
     fun endpointMatcherCoversDynamicCoreRoutes() {
         assertTrue(AndroidCoreContract.matches("POST", "/api/agents/12/activate"))
+        assertTrue(AndroidCoreContract.matches("POST", "/api/agents/generate-role"))
         assertTrue(AndroidCoreContract.matches("GET", "/api/knowledge/documents/9/content?limit=100"))
         assertTrue(AndroidCoreContract.matches("POST", "/api/knowledge/documents/9/reingest"))
         assertTrue(AndroidCoreContract.matches("GET", "/api/knowledge/jobs"))

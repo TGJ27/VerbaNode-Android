@@ -1,5 +1,9 @@
 # VerbaNode Android
 
+## v0.5.1 Agent Management + Mobile Parity
+
+Brings the mobile agent editor much closer to the web dashboard: search/refresh states, AI role generation, full Edge/Kokoro speech controls, sampling/context settings, plugin-tool assignment, Knowledge Library assignment, and safer memory/delete confirmations. Also repairs Android CI SDK/report handling. Requires Core v0.12.4+ for the advertised agent-role generation contract.
+
 ## v0.5.0 Knowledge Management Phase 2
 
 Adds catalog search and status/source filters, ingestion-job visibility, explicit file reprocessing versus retrieval-only reindexing, destructive-action confirmations, and direct agent ↔ library assignment from the Knowledge screen. Requires Core v0.12.3+ so the existing re-ingest/jobs/agent-library routes are advertised in the mobile contract.
@@ -30,13 +34,13 @@ Production and test Kotlin now each have one canonical source root. Gradle compi
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.5.0  
-**Required Core:** VerbaNode v0.12.3+  
+**Current version:** v0.5.1  
+**Required Core:** VerbaNode v0.12.4+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.5.0 includes full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.5.1 adds Agent Management parity on top of full mobile management for the Hybrid RAG Knowledge Engine while keeping Core authoritative for parsing, indexing, retrieval, AI, audio, plugins, database state and device credentials.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
@@ -75,7 +79,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Connection flow
 
-1. Start VerbaNode Core v0.12.3 or newer on the Windows PC.
+1. Start VerbaNode Core v0.12.4 or newer on the Windows PC.
 2. Put the phone and PC on the same LAN/Wi-Fi.
 3. Open VerbaNode Android.
 4. Use **Scan Wi-Fi** (single 6.5-second scan), scan a QR pairing code, select a saved server, or enter the HTTPS address manually.
@@ -85,7 +89,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.5.0 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.5.1 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -121,12 +125,12 @@ build_release_apk.bat
 ## Architecture
 
 ```text
-VerbaNode Core v0.12.3+ (Windows)
+VerbaNode Core v0.12.4+ (Windows)
         │
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.5.0
+VerbaNode Android v0.5.1
         │
         ├── Home / system dashboard
         ├── Chat / PTT

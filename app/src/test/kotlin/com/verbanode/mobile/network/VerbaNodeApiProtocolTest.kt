@@ -319,4 +319,41 @@ class VerbaNodeApiProtocolTest {
         assertEquals(listOf(3, 8), (0 until payload.getJSONArray("library_ids").length()).map { payload.getJSONArray("library_ids").getInt(it) })
     }
 
+    @Test
+    fun generatedAgentRoleUsesDedicatedContractAndRequiresAllFields() {
+        val seen = AtomicReference<Request>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                seen.set(chain.request())
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        """{"role":"Receptionist","system_prompt":"Be concise","greeting":"Hello"}"""
+                            .toResponseBody("application/json".toMediaType()),
+                    )
+                    .build()
+            }
+            .build()
+        val api = VerbaNodeApi("https://verbanode.test", "unused", client)
+
+        val result = api.generateAgentRole("session", "A robotics receptionist", "qwen3.5:0.8b")
+
+        val request = seen.get()
+        assertEquals("POST", request.method)
+        assertEquals("/api/agents/generate-role", request.url.encodedPath)
+        val buffer = okio.Buffer(); request.body!!.writeTo(buffer)
+        val payload = JSONObject(buffer.readUtf8())
+        assertEquals("A robotics receptionist", payload.getString("description"))
+        assertEquals("qwen3.5:0.8b", payload.getString("model"))
+        assertEquals("Receptionist", result.getString("role"))
+
+        assertProtocolError {
+            apiReturning("""{"role":"Receptionist","greeting":"Hello"}""")
+                .generateAgentRole("session", "A robotics receptionist", null)
+        }
+    }
+
 }

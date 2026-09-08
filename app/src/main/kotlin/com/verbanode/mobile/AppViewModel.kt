@@ -361,11 +361,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             _ui.update { it.copy(pipelineStatus = data, chatStatus = pipelineStatusLabel(stage, it.mode)) }
                         }
                         "agents_changed", "agent_changed" -> { loadBootstrapInternal(); if (_ui.value.screen == AppScreen.AGENTS) loadAgentsManagementInternal() }
-                        "plugins_changed" -> if (_ui.value.screen == AppScreen.PLUGINS) loadPluginsInternal()
+                        "plugins_changed" -> if (_ui.value.screen == AppScreen.PLUGINS || _ui.value.screen == AppScreen.AGENTS) loadPluginsInternal()
                         "scripts_changed", "queue_changed", "queue_state", "script_defaults_changed" -> if (_ui.value.screen == AppScreen.SCRIPTS) loadScriptsInternal()
                         "type_to_talk_queue" -> if (_ui.value.screen == AppScreen.TYPE_TO_TALK) loadTypeToTalkInternal()
                         "audio_library_changed", "audio_library_state" -> if (_ui.value.screen == AppScreen.AUDIO) loadAudioLibraryInternal()
-                        "knowledge_changed" -> if (_ui.value.screen == AppScreen.KNOWLEDGE || _ui.value.screen == AppScreen.AGENTS) loadKnowledgeInternal()
+                        "knowledge_changed" -> when (_ui.value.screen) {
+                            AppScreen.KNOWLEDGE -> loadKnowledgeInternal()
+                            AppScreen.AGENTS -> loadAgentKnowledgeLibrariesInternal()
+                            else -> Unit
+                        }
                         "models_changed", "model_pull" -> {
                             if (_ui.value.screen == AppScreen.SETTINGS) loadSettingsInternal()
                             if (_ui.value.screen == AppScreen.AGENTS || _ui.value.screen == AppScreen.SCRIPTS) loadConfigurationOptionsInternal()
@@ -684,7 +688,40 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copy(rawAgents = values) }
     }
 
-    fun openAgents() = runBusy { loadAgentsManagementInternal(); loadConfigurationOptionsInternal(); loadKnowledgeInternal(); _ui.update { it.copy(screen = AppScreen.AGENTS) } }
+    private suspend fun loadAgentKnowledgeLibrariesInternal() {
+        val (localApi, token) = requireApiSession()
+        val libraries = withContext(Dispatchers.IO) { localApi.knowledgeLibraries(token).objectList() }
+        _ui.update { it.copy(knowledgeLibraries = libraries) }
+    }
+
+    private suspend fun loadAgentWorkspaceInternal() {
+        _ui.update { it.copy(agentsLoading = true, agentsLoadError = null) }
+        try {
+            loadAgentsManagementInternal()
+            loadConfigurationOptionsInternal()
+            loadAgentKnowledgeLibrariesInternal()
+            loadPluginsInternal()
+            _ui.update { it.copy(agentsLoadError = null) }
+        } catch (error: Exception) {
+            _ui.update { it.copy(agentsLoadError = friendlyError(error)) }
+            throw error
+        } finally {
+            _ui.update { it.copy(agentsLoading = false) }
+        }
+    }
+
+    fun openAgents() {
+        _ui.update { it.copy(screen = AppScreen.AGENTS, error = null, notice = null, agentsLoadError = null) }
+        runBusy { loadAgentWorkspaceInternal() }
+    }
+
+    fun refreshAgents() = runBusy { loadAgentWorkspaceInternal(); _ui.update { it.copy(notice = "Agent workspace refreshed.") } }
+
+    fun generateAgentRole(description: String, model: String?, onReady: (JSONObject) -> Unit) = runBusy {
+        val (localApi, token) = requireApiSession()
+        val generated = withContext(Dispatchers.IO) { localApi.generateAgentRole(token, description, model) }
+        onReady(generated)
+    }
 
     fun saveAgent(agentId: Int?, payload: JSONObject) = runBusy {
         val (localApi, token) = requireApiSession()

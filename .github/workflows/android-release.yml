@@ -10,17 +10,33 @@ jobs:
   release-apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - name: Install Android SDK 37
-        run: yes | sdkmanager "platforms;android-37" "build-tools;36.0.0"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.5.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_PACKAGES="$(sdkmanager --list --include_obsolete)"
+          if grep -Fq "platforms;android-37.0" <<<"$SDK_PACKAGES"; then
+            PLATFORM_PACKAGE="platforms;android-37.0"
+            PLATFORM_DIR="android-37.0"
+          elif grep -Fq "platforms;android-37" <<<"$SDK_PACKAGES"; then
+            PLATFORM_PACKAGE="platforms;android-37"
+            PLATFORM_DIR="android-37"
+          else
+            echo "Android SDK platform 37 is not available from this runner's sdkmanager repository." >&2
+            sdkmanager --list --include_obsolete | grep -E "platforms;android-(36|37)" || true
+            exit 1
+          fi
+          sdkmanager "$PLATFORM_PACKAGE" "build-tools;37.0.0"
+          test -f "$ANDROID_HOME/platforms/$PLATFORM_DIR/android.jar"
+          test -x "$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          echo "Installed $PLATFORM_PACKAGE with Build Tools 37.0.0"
+      - uses: gradle/actions/setup-gradle@v6
       - name: Restore signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.VERBANODE_KEYSTORE_BASE64 }}
@@ -28,32 +44,32 @@ jobs:
           test -n "$KEYSTORE_BASE64" || (echo "Missing VERBANODE_KEYSTORE_BASE64" && exit 1)
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/verbanode-release.jks"
       - name: Run JVM unit tests
-        run: gradle --no-daemon clean testDebugUnitTest --stacktrace
+        run: ./gradlew --no-daemon clean testDebugUnitTest --stacktrace
       - name: Run release lint
-        run: gradle --no-daemon lintRelease --stacktrace
+        run: ./gradlew --no-daemon lintRelease --stacktrace
       - name: Upload release lint reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.0-release-lint-reports
+          name: VerbaNode-Android-v0.5.1-release-lint-reports
           path: app/build/reports/lint-results-release.*
-          if-no-files-found: error
+          if-no-files-found: warn
       - name: Build signed release APK
         env:
           VN_KEYSTORE_PATH: ${{ runner.temp }}/verbanode-release.jks
           VN_KEYSTORE_PASSWORD: ${{ secrets.VERBANODE_KEYSTORE_PASSWORD }}
           VN_KEY_ALIAS: ${{ secrets.VERBANODE_KEY_ALIAS }}
           VN_KEY_PASSWORD: ${{ secrets.VERBANODE_KEY_PASSWORD }}
-        run: gradle --no-daemon assembleRelease --stacktrace
+        run: ./gradlew --no-daemon assembleRelease --stacktrace
       - name: Verify APK signature and checksum
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/VerbaNode-Android-v0.5.0.apk
-          sha256sum dist/VerbaNode-Android-v0.5.0.apk > dist/VerbaNode-Android-v0.5.0.apk.sha256
-      - uses: actions/upload-artifact@v4
+          cp app/build/outputs/apk/release/app-release.apk dist/VerbaNode-Android-v0.5.1.apk
+          sha256sum dist/VerbaNode-Android-v0.5.1.apk > dist/VerbaNode-Android-v0.5.1.apk.sha256
+      - uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.0-release-apk
+          name: VerbaNode-Android-v0.5.1-release-apk
           path: |
-            dist/VerbaNode-Android-v0.5.0.apk
-            dist/VerbaNode-Android-v0.5.0.apk.sha256
+            dist/VerbaNode-Android-v0.5.1.apk
+            dist/VerbaNode-Android-v0.5.1.apk.sha256

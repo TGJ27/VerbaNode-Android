@@ -44,6 +44,7 @@ object AndroidCoreContract {
         "actions" to ContractEndpoint("GET", "/api/actions"),
         "agents_list" to ContractEndpoint("GET", "/api/agents"),
         "agents_create" to ContractEndpoint("POST", "/api/agents"),
+        "agent_generate_role" to ContractEndpoint("POST", "/api/agents/generate-role"),
         "agent_update" to ContractEndpoint("PUT", "/api/agents/{agent_id}"),
         "agent_delete" to ContractEndpoint("DELETE", "/api/agents/{agent_id}"),
         "agent_activate" to ContractEndpoint("POST", "/api/agents/{agent_id}/activate"),
@@ -151,12 +152,14 @@ object AndroidCoreContract {
         "auth_device_login" to setOf("device_id", "device_token", "client_name", "client_type", "client_version", "api_version"),
         "pairing_start" to setOf("preferred_server_url"),
         "pairing_claim" to setOf("pairing_id", "secret", "short_code", "device_name", "device_type", "device_version", "platform"),
+        "agent_generate_role" to setOf("description", "model"),
         "knowledge_agent_libraries_set" to setOf("library_ids"),
     )
 
     val requiredResponseFields: Map<String, Set<String>> = mapOf(
         "auth_grant" to setOf("token", "server_version", "api_version", "websocket_protocol_version", "heartbeat_interval_seconds", "heartbeat_timeout_seconds", "session"),
         "ws_ticket" to setOf("ticket"),
+        "agent_generate_role" to setOf("role", "system_prompt", "greeting"),
         "pairing_start" to setOf("pairing_id", "pairing_uri"),
         "pairing_claim" to setOf("device_id", "device_token"),
         "bootstrap" to setOf("agents", "messages", "mode"),

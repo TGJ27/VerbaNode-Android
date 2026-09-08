@@ -36,6 +36,8 @@ data class MobileUiState(
     val devices: List<TrustedDevice> = emptyList(),
     val pairingStatus: JSONObject? = null,
     val rawAgents: List<JSONObject> = emptyList(),
+    val agentsLoading: Boolean = false,
+    val agentsLoadError: String? = null,
     val knowledgeStatus: JSONObject? = null,
     val knowledgeLibraries: List<JSONObject> = emptyList(),
     val knowledgeDocuments: List<JSONObject> = emptyList(),

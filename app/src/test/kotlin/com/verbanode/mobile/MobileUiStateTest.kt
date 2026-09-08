@@ -18,6 +18,8 @@ class MobileUiStateTest {
         assertTrue(state.knowledgeAllDocuments.isEmpty())
         assertFalse(state.knowledgeLoading)
         assertNull(state.knowledgeLoadError)
+        assertFalse(state.agentsLoading)
+        assertNull(state.agentsLoadError)
     }
 
     @Test

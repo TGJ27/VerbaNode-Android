@@ -45,6 +45,12 @@ import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.MainActivity
+import com.verbanode.mobile.agent.AgentDraft
+import com.verbanode.mobile.agent.AgentToolOption
+import com.verbanode.mobile.agent.DEFAULT_AGENT_TOOL_IDS
+import com.verbanode.mobile.agent.agentMatchesQuery
+import com.verbanode.mobile.agent.agentToolOptions
+import com.verbanode.mobile.agent.normalizeAgentDraft
 import com.verbanode.mobile.knowledge.KnowledgeDocumentRef
 import com.verbanode.mobile.knowledge.KnowledgeDocumentScope
 import com.verbanode.mobile.knowledge.KnowledgeIngestionJobRef
@@ -101,6 +107,32 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
     var editing by remember { mutableStateOf<JSONObject?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<JSONObject?>(null) }
+    var memoryTarget by remember { mutableStateOf<JSONObject?>(null) }
+    var query by remember { mutableStateOf("") }
+    var activeOnly by remember { mutableStateOf(false) }
+
+    val activeId = state.activeAgent?.id
+    val visibleAgents = state.rawAgents.filter { agent ->
+        (!activeOnly || agent.optInt("id") == activeId) && agentMatchesQuery(
+            agent.optString("name"),
+            agent.optString("role"),
+            agent.optString("llm_model"),
+            query,
+        )
+    }
+    val reportedTools = agentToolOptions(state.pluginItems.mapNotNull { plugin ->
+        val id = plugin.optString("id").trim()
+        if (id.isBlank()) null else AgentToolOption(
+            id = id,
+            name = plugin.optString("name", id).ifBlank { id },
+            enabled = plugin.optBoolean("enabled", true),
+            status = plugin.optString("status", "healthy"),
+        )
+    })
+    val toolOptions = if (reportedTools.isNotEmpty()) reportedTools else DEFAULT_AGENT_TOOL_IDS.sorted().map { id ->
+        AgentToolOption(id, id.replace('_', ' ').replaceFirstChar(Char::uppercaseChar), true, "fallback")
+    }
+
     ManagementScaffold(viewModel, "Agents", AppScreen.AGENTS) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
@@ -109,13 +141,46 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
         ) {
             item { Feedback(viewModel) }
             item {
-                DashboardCard("Agent workspace", "Create and manage the same agents used by the web dashboard.") {
-                    Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ Create agent") }
+                DashboardCard("Agent workspace", "Configure the same agent identity, models, speech, tools, and Knowledge access as the web dashboard.") {
+                    Text("${state.rawAgents.size} agents · ${toolOptions.count { it.enabled }} available tools · ${state.knowledgeLibraries.size} Knowledge libraries", style = MaterialTheme.typography.bodySmall)
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { creating = true }, modifier = Modifier.weight(1f)) { Text("＋ Create") }
+                        OutlinedButton(onClick = viewModel::refreshAgents, modifier = Modifier.weight(1f), enabled = !state.agentsLoading) { Text("↻ Refresh") }
+                    }
                 }
             }
-            items(state.rawAgents, key = { it.optInt("id") }) { agent ->
+            item {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it.take(120) },
+                    label = { Text("Search agents") },
+                    placeholder = { Text("Name, role, or model") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item { FilterChip(selected = !activeOnly, onClick = { activeOnly = false }, label = { Text("All") }) }
+                    item { FilterChip(selected = activeOnly, onClick = { activeOnly = true }, label = { Text("Active") }) }
+                }
+            }
+            if (state.agentsLoading && state.rawAgents.isEmpty()) {
+                item { DashboardCard("Loading agents", "Reading agent configuration from Core…") { Text("Please wait.") } }
+            }
+            state.agentsLoadError?.let { message ->
+                item { DashboardCard("Agent refresh failed", message) { OutlinedButton(onClick = viewModel::refreshAgents) { Text("Retry") } } }
+            }
+            if (!state.agentsLoading && state.rawAgents.isEmpty() && state.agentsLoadError == null) {
+                item { DashboardCard("No agents", "Create an agent to begin.") { Button(onClick = { creating = true }) { Text("Create agent") } } }
+            } else if (visibleAgents.isEmpty() && state.rawAgents.isNotEmpty()) {
+                item { DashboardCard("No matching agents", "Change the search or active filter.") { OutlinedButton(onClick = { query = ""; activeOnly = false }) { Text("Clear filters") } } }
+            }
+            items(visibleAgents, key = { it.optInt("id") }) { agent ->
                 val id = agent.optInt("id")
-                val active = state.activeAgent?.id == id
+                val active = activeId == id
+                val knowledgeCount = agent.optJSONArray("knowledge_library_ids")?.length() ?: 0
+                val toolCount = agent.optJSONArray("tools_enabled")?.length() ?: 0
                 Card(
                     Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -132,15 +197,17 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
                             }
                             if (!active) Button(onClick = { viewModel.selectAgent(id) }) { Text("Activate") }
                         }
-                        Row(Modifier.padding(top = 9.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Pill(agent.optString("language", "en").uppercase())
-                            Pill(agent.optString("llm_model", "model"))
-                            Pill(agent.optString("tts_mode", "tts"))
+                        LazyRow(Modifier.padding(top = 9.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            item { Pill(agent.optString("language", "en").uppercase()) }
+                            item { Pill(agent.optString("llm_model", "model")) }
+                            item { Pill(agent.optString("tts_mode", "tts")) }
+                            item { Pill("$knowledgeCount libraries") }
+                            item { Pill("$toolCount tools") }
                         }
                         Text(agent.optString("greeting"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
                         Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(onClick = { editing = agent }, modifier = Modifier.weight(1f)) { Text("Edit") }
-                            OutlinedButton(onClick = { viewModel.clearAgentMemoryManagement(id) }, modifier = Modifier.weight(1f)) { Text("Clear memory") }
+                            OutlinedButton(onClick = { memoryTarget = agent }, modifier = Modifier.weight(1f)) { Text("Clear memory") }
                         }
                         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(
@@ -155,14 +222,31 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
         }
     }
     if (creating || editing != null) {
-        AgentEditorDialog(existing = editing, configurationOptions = state.configurationOptions, knowledgeLibraries = state.knowledgeLibraries, onDismiss = { creating = false; editing = null }) { id, payload ->
-            creating = false; editing = null; viewModel.saveAgent(id, payload)
+        AgentEditorDialog(
+            existing = editing,
+            configurationOptions = state.configurationOptions,
+            knowledgeLibraries = state.knowledgeLibraries,
+            toolOptions = toolOptions,
+            onDismiss = { creating = false; editing = null },
+            onGenerateRole = viewModel::generateAgentRole,
+        ) { id, payload ->
+            creating = false
+            editing = null
+            viewModel.saveAgent(id, payload)
         }
+    }
+    memoryTarget?.let { agent ->
+        ConfirmDialog(
+            title = "Clear ${agent.optString("name", "agent")} memory?",
+            message = "This permanently clears this agent's saved conversations and summaries. The agent configuration and Knowledge assignments are kept.",
+            onDismiss = { memoryTarget = null },
+            onConfirm = { val id = agent.optInt("id"); memoryTarget = null; viewModel.clearAgentMemoryManagement(id) },
+        )
     }
     deleteTarget?.let { agent ->
         ConfirmDialog(
             title = "Delete ${agent.optString("name", "agent")}?",
-            message = "This removes the agent configuration. This cannot be undone.",
+            message = "This permanently removes the agent and its conversation history. Knowledge libraries themselves are not deleted. Core requires at least one agent to remain.",
             onDismiss = { deleteTarget = null },
             onConfirm = { val id = agent.optInt("id"); deleteTarget = null; viewModel.deleteAgentManagement(id) },
         )
@@ -170,33 +254,54 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
 }
 
 @Composable
-private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONObject?, knowledgeLibraries: List<JSONObject>, onDismiss: () -> Unit, onSave: (Int?, JSONObject) -> Unit) {
+private fun AgentEditorDialog(
+    existing: JSONObject?,
+    configurationOptions: JSONObject?,
+    knowledgeLibraries: List<JSONObject>,
+    toolOptions: List<AgentToolOption>,
+    onDismiss: () -> Unit,
+    onGenerateRole: (String, String?, (JSONObject) -> Unit) -> Unit,
+    onSave: (Int?, JSONObject) -> Unit,
+) {
     var name by remember(existing) { mutableStateOf(existing?.optString("name", "Ropi") ?: "Ropi") }
     var avatar by remember(existing) { mutableStateOf(existing?.optString("avatar", "RP") ?: "RP") }
     var color by remember(existing) { mutableStateOf(existing?.optString("color", "#3578f6") ?: "#3578f6") }
     var role by remember(existing) { mutableStateOf(existing?.optString("role", "Helpful assistant") ?: "Helpful assistant") }
     var systemPrompt by remember(existing) { mutableStateOf(existing?.optString("system_prompt", "You are a helpful assistant.") ?: "You are a helpful assistant.") }
     var greeting by remember(existing) { mutableStateOf(existing?.optString("greeting", "Hello. How can I help?") ?: "Hello. How can I help?") }
+    var roleDescription by remember(existing) { mutableStateOf("") }
     var model by remember(existing) { mutableStateOf(existing?.optString("llm_model", "qwen3.5:0.8b") ?: "qwen3.5:0.8b") }
     var language by remember(existing) { mutableStateOf(existing?.optString("language", "en") ?: "en") }
     var ttsMode by remember(existing) { mutableStateOf(existing?.optString("tts_mode", "edge_fallback") ?: "edge_fallback") }
     var edgeVoice by remember(existing) { mutableStateOf(existing?.optString("edge_voice", "en-US-AriaNeural") ?: "en-US-AriaNeural") }
+    var kokoroVoiceId by remember(existing) { mutableStateOf((existing?.optInt("kokoro_voice_id", 0) ?: 0).toString()) }
+    var ttsRate by remember(existing) { mutableStateOf((existing?.optDouble("tts_rate", 1.0) ?: 1.0).toString()) }
+    var ttsVolume by remember(existing) { mutableStateOf((existing?.optDouble("tts_volume", 1.0) ?: 1.0).toString()) }
     var sttModel by remember(existing) { mutableStateOf(existing?.optString("stt_model", "iic/SenseVoiceSmall") ?: "iic/SenseVoiceSmall") }
-    var temperature by remember(existing) { mutableStateOf(existing?.optDouble("temperature", 0.6)?.toString() ?: "0.6") }
-    var topP by remember(existing) { mutableStateOf(existing?.optDouble("top_p", 0.9)?.toString() ?: "0.9") }
-    var maxTokens by remember(existing) { mutableStateOf(existing?.optInt("max_tokens", 1024)?.toString() ?: "1024") }
-    var contextSize by remember(existing) { mutableStateOf(existing?.optInt("context_size", 8192)?.toString() ?: "8192") }
+    var temperature by remember(existing) { mutableStateOf((existing?.optDouble("temperature", 0.6) ?: 0.6).toString()) }
+    var topP by remember(existing) { mutableStateOf((existing?.optDouble("top_p", 0.9) ?: 0.9).toString()) }
+    var maxTokens by remember(existing) { mutableStateOf((existing?.optInt("max_tokens", 1024) ?: 1024).toString()) }
+    var contextSize by remember(existing) { mutableStateOf((existing?.optInt("context_size", 8192) ?: 8192).toString()) }
     var selectedKnowledgeIds by remember(existing, knowledgeLibraries) {
         val initial = mutableSetOf<Int>()
         val array = existing?.optJSONArray("knowledge_library_ids") ?: JSONArray()
         for (index in 0 until array.length()) array.optInt(index).takeIf { it > 0 }?.let(initial::add)
         mutableStateOf(initial.toSet())
     }
+    var selectedToolIds by remember(existing, toolOptions) {
+        val initial = mutableSetOf<String>()
+        val array = existing?.optJSONArray("tools_enabled")
+        if (array == null && existing == null) initial += DEFAULT_AGENT_TOOL_IDS
+        else if (array != null) for (index in 0 until array.length()) array.optString(index).trim().takeIf { it.isNotBlank() }?.let(initial::add)
+        mutableStateOf(initial.toSet())
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Create agent" else "Edit agent") },
         text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item { Text("Identity", fontWeight = FontWeight.Bold) }
                 item { OutlinedTextField(name, { name = it.take(80) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth()) }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -204,9 +309,26 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
                         OutlinedTextField(color, { color = it.take(16) }, label = { Text("Color") }, modifier = Modifier.weight(1f))
                     }
                 }
-                item { OutlinedTextField(role, { role = it }, label = { Text("Role") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
-                item { OutlinedTextField(systemPrompt, { systemPrompt = it }, label = { Text("System prompt") }, minLines = 3, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(role, { role = it }, label = { Text("Role summary") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(systemPrompt, { systemPrompt = it }, label = { Text("Character instructions") }, minLines = 4, modifier = Modifier.fillMaxWidth()) }
                 item { OutlinedTextField(greeting, { greeting = it }, label = { Text("Greeting") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(roleDescription, { roleDescription = it.take(4000) }, label = { Text("Describe an agent to generate") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            if (roleDescription.trim().length >= 3) onGenerateRole(roleDescription.trim(), model) { generated ->
+                                role = generated.optString("role", role)
+                                systemPrompt = generated.optString("system_prompt", systemPrompt)
+                                greeting = generated.optString("greeting", greeting)
+                            }
+                        },
+                        enabled = roleDescription.trim().length >= 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Generate identity, character, and greeting") }
+                }
+
+                item { HorizontalDivider() }
+                item { Text("Models & speech", fontWeight = FontWeight.Bold) }
                 item { ChoiceField("LLM model", model, configChoices(configurationOptions, "llm_models"), Modifier.fillMaxWidth()) { model = it } }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -214,12 +336,22 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
                             language = selected
                             val allowed = sttChoices(configurationOptions, selected)
                             if (allowed.isNotEmpty() && allowed.none { it.first == sttModel }) sttModel = allowed.first().first
+                            if (selected == "id") ttsMode = "edge"
+                            val edge = edgeVoiceChoices(configurationOptions, selected)
+                            if (edge.isNotEmpty() && edge.none { it.first == edgeVoice }) edgeVoice = edge.first().first
                         }
                         ChoiceField("TTS mode", ttsMode, configChoices(configurationOptions, "tts_modes"), Modifier.weight(1f)) { ttsMode = it }
                     }
                 }
-                item { OutlinedTextField(edgeVoice, { edgeVoice = it }, label = { Text("Edge voice") }, modifier = Modifier.fillMaxWidth()) }
                 item { ChoiceField("STT model", sttModel, sttChoices(configurationOptions, language), Modifier.fillMaxWidth()) { sttModel = it } }
+                item { ChoiceField("Edge voice", edgeVoice, edgeVoiceChoices(configurationOptions, language), Modifier.fillMaxWidth()) { edgeVoice = it } }
+                item { ChoiceField("Kokoro voice", kokoroVoiceId, configChoices(configurationOptions, "kokoro_voices"), Modifier.fillMaxWidth()) { kokoroVoiceId = it } }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(ttsRate, { ttsRate = it }, label = { Text("Speech rate") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                        OutlinedTextField(ttsVolume, { ttsVolume = it }, label = { Text("Volume") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                    }
+                }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(temperature, { temperature = it }, label = { Text("Temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
@@ -232,7 +364,29 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
                         OutlinedTextField(contextSize, { contextSize = it.filter(Char::isDigit) }, label = { Text("Context") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
                     }
                 }
-                item { Text("Knowledge Libraries", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp)) }
+
+                item { HorizontalDivider() }
+                item { Text("Tools", fontWeight = FontWeight.Bold) }
+                if (toolOptions.isEmpty()) {
+                    item { Text("No tools reported by Core.", style = MaterialTheme.typography.bodySmall) }
+                } else {
+                    items(toolOptions, key = { "tool-${it.id}" }) { tool ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = tool.id in selectedToolIds,
+                                enabled = tool.enabled,
+                                onCheckedChange = { checked -> selectedToolIds = if (checked) selectedToolIds + tool.id else selectedToolIds - tool.id },
+                            )
+                            Column {
+                                Text(tool.name, fontWeight = FontWeight.SemiBold)
+                                Text(if (tool.enabled) tool.id else "${tool.id} · globally disabled", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+
+                item { HorizontalDivider() }
+                item { Text("Knowledge Libraries", fontWeight = FontWeight.Bold) }
                 if (knowledgeLibraries.isEmpty()) {
                     item { Text("No Knowledge Libraries yet.", style = MaterialTheme.typography.bodySmall) }
                 } else {
@@ -240,7 +394,10 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
                         val libraryId = library.optInt("id")
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = libraryId in selectedKnowledgeIds, onCheckedChange = { checked -> selectedKnowledgeIds = if (checked) selectedKnowledgeIds + libraryId else selectedKnowledgeIds - libraryId })
-                            Column { Text(library.optString("name", "Knowledge"), fontWeight = FontWeight.SemiBold); Text("${library.optInt("document_count")} docs", style = MaterialTheme.typography.labelSmall) }
+                            Column {
+                                Text(library.optString("name", "Knowledge"), fontWeight = FontWeight.SemiBold)
+                                Text("${library.optInt("document_count")} docs${if (library.optBoolean("enabled", true)) "" else " · disabled"}", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -249,14 +406,41 @@ private fun AgentEditorDialog(existing: JSONObject?, configurationOptions: JSONO
         confirmButton = {
             TextButton(onClick = {
                 if (name.isBlank()) return@TextButton
+                val draft = normalizeAgentDraft(
+                    AgentDraft(
+                        name = name,
+                        avatar = avatar,
+                        color = color,
+                        role = role,
+                        systemPrompt = systemPrompt,
+                        greeting = greeting,
+                        llmModel = model,
+                        language = language,
+                        ttsMode = ttsMode,
+                        edgeVoice = edgeVoice,
+                        kokoroVoiceId = kokoroVoiceId.toIntOrNull() ?: 0,
+                        ttsRate = ttsRate.toDoubleOrNull() ?: 1.0,
+                        ttsVolume = ttsVolume.toDoubleOrNull() ?: 1.0,
+                        sttModel = sttModel,
+                        temperature = temperature.toDoubleOrNull() ?: 0.6,
+                        topP = topP.toDoubleOrNull() ?: 0.9,
+                        maxTokens = maxTokens.toIntOrNull() ?: 1024,
+                        contextSize = contextSize.toIntOrNull() ?: 8192,
+                        toolsEnabled = selectedToolIds,
+                        knowledgeLibraryIds = selectedKnowledgeIds,
+                    ),
+                )
+                if (draft.name.isBlank()) return@TextButton
                 val payload = existing?.let { JSONObject(it.toString()) } ?: JSONObject()
-                payload.put("name", name.trim()).put("avatar", avatar.ifBlank { "AI" }).put("color", color.ifBlank { "#3578f6" })
-                    .put("role", role).put("system_prompt", systemPrompt).put("greeting", greeting).put("llm_model", model)
-                    .put("language", if (language == "id") "id" else "en").put("tts_mode", ttsMode.ifBlank { "edge_fallback" })
-                    .put("edge_voice", edgeVoice).put("stt_model", sttModel)
-                    .put("temperature", temperature.toDoubleOrNull() ?: 0.6).put("top_p", topP.toDoubleOrNull() ?: 0.9)
-                    .put("max_tokens", maxTokens.toIntOrNull() ?: 1024).put("context_size", contextSize.toIntOrNull() ?: 8192)
-                    .put("knowledge_library_ids", JSONArray().apply { selectedKnowledgeIds.sorted().forEach { put(it) } })
+                payload.put("name", draft.name).put("avatar", draft.avatar).put("color", draft.color)
+                    .put("role", draft.role).put("system_prompt", draft.systemPrompt).put("greeting", draft.greeting).put("llm_model", draft.llmModel)
+                    .put("language", draft.language).put("tts_mode", draft.ttsMode).put("edge_voice", draft.edgeVoice)
+                    .put("kokoro_voice_id", draft.kokoroVoiceId).put("tts_rate", draft.ttsRate).put("tts_volume", draft.ttsVolume)
+                    .put("stt_model", draft.sttModel).put("temperature", draft.temperature).put("top_p", draft.topP)
+                    .put("max_tokens", draft.maxTokens).put("context_size", draft.contextSize)
+                    .put("tools_enabled", JSONArray().apply { draft.toolsEnabled.forEach(::put) })
+                    .put("info_ids", JSONArray())
+                    .put("knowledge_library_ids", JSONArray().apply { draft.knowledgeLibraryIds.forEach(::put) })
                 onSave(existing?.optInt("id")?.takeIf { it > 0 }, payload)
             }) { Text("Save") }
         },

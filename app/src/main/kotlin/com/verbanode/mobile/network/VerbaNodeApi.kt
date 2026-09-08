@@ -234,6 +234,19 @@ class VerbaNodeApi(
     fun actions(sessionToken: String): JSONObject = request("/api/actions", sessionToken = sessionToken)
 
     fun agentsRaw(sessionToken: String): JSONArray = requestArray("/api/agents", sessionToken = sessionToken)
+    fun generateAgentRole(sessionToken: String, description: String, model: String?): JSONObject {
+        val path = "/api/agents/generate-role"
+        return request(
+            path,
+            "POST",
+            sessionToken,
+            JSONObject().put("description", description.trim()).apply { if (!model.isNullOrBlank()) put("model", model) },
+        ).also { payload ->
+            payload.requireString("role", path)
+            payload.requireString("system_prompt", path)
+            payload.requireString("greeting", path)
+        }
+    }
     fun createAgent(sessionToken: String, payload: JSONObject): JSONObject = request("/api/agents", "POST", sessionToken, payload)
     fun updateAgent(sessionToken: String, agentId: Int, payload: JSONObject): JSONObject = request("/api/agents/$agentId", "PUT", sessionToken, payload)
     fun deleteAgent(sessionToken: String, agentId: Int) { request("/api/agents/$agentId", "DELETE", sessionToken) }
