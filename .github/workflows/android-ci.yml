@@ -42,7 +42,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.1-unit-test-reports
+          name: VerbaNode-Android-v0.5.2-unit-test-reports
           path: |
             app/build/test-results/testDebugUnitTest/**
             app/build/reports/tests/testDebugUnitTest/**
@@ -53,12 +53,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.1-lint-reports
+          name: VerbaNode-Android-v0.5.2-lint-reports
           path: app/build/reports/lint-results-debug.*
           if-no-files-found: warn
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug --stacktrace
       - uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.1-debug-apk
+          name: VerbaNode-Android-v0.5.2-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk

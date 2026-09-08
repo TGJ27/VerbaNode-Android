@@ -51,7 +51,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.1-release-lint-reports
+          name: VerbaNode-Android-v0.5.2-release-lint-reports
           path: app/build/reports/lint-results-release.*
           if-no-files-found: warn
       - name: Build signed release APK
@@ -65,11 +65,11 @@ jobs:
         run: |
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/VerbaNode-Android-v0.5.1.apk
-          sha256sum dist/VerbaNode-Android-v0.5.1.apk > dist/VerbaNode-Android-v0.5.1.apk.sha256
+          cp app/build/outputs/apk/release/app-release.apk dist/VerbaNode-Android-v0.5.2.apk
+          sha256sum dist/VerbaNode-Android-v0.5.2.apk > dist/VerbaNode-Android-v0.5.2.apk.sha256
       - uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.1-release-apk
+          name: VerbaNode-Android-v0.5.2-release-apk
           path: |
-            dist/VerbaNode-Android-v0.5.1.apk
-            dist/VerbaNode-Android-v0.5.1.apk.sha256
+            dist/VerbaNode-Android-v0.5.2.apk
+            dist/VerbaNode-Android-v0.5.2.apk.sha256

@@ -8,6 +8,7 @@ import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import javax.net.SocketFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -53,18 +54,25 @@ object TlsTrust {
      * peer chain for every custom TrustManager implementation. The trust manager
      * therefore captures the certificate directly during the TLS handshake.
      */
-    fun probe(rawBaseUrl: String, expectedSpkiSha256: String? = null): ProbeResult {
+    fun probe(
+        rawBaseUrl: String,
+        expectedSpkiSha256: String? = null,
+        connectTimeoutMs: Long = 5_000L,
+        readTimeoutMs: Long = 8_000L,
+        socketFactory: SocketFactory? = null,
+    ): ProbeResult {
         val baseUrl = normalizeTlsBaseUrl(rawBaseUrl)
         val trust = CapturingTrustManager()
         val ssl = SSLContext.getInstance("TLS").apply {
             init(null, arrayOf<TrustManager>(trust), SecureRandom())
         }
-        val client = OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .sslSocketFactory(ssl.socketFactory, trust)
             .hostnameVerifier { _, _ -> true }
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .build()
+            .connectTimeout(connectTimeoutMs, TimeUnit.MILLISECONDS)
+            .readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
+        if (socketFactory != null) builder.socketFactory(socketFactory)
+        val client = builder.build()
         val request = Request.Builder().url(baseUrl + AndroidCoreContract.endpoint("client_info").path).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {

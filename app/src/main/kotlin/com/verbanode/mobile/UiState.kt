@@ -1,6 +1,7 @@
 package com.verbanode.mobile
 
 import com.verbanode.mobile.discovery.DiscoveredServer
+import com.verbanode.mobile.discovery.DiscoveryStage
 import com.verbanode.mobile.network.Agent
 import com.verbanode.mobile.network.AuthSession
 import com.verbanode.mobile.network.ChatMessage
@@ -21,6 +22,8 @@ data class MobileUiState(
     val profiles: List<ServerProfile> = emptyList(),
     val discovered: List<DiscoveredServer> = emptyList(),
     val discoveryActive: Boolean = false,
+    val discoveryStage: DiscoveryStage = DiscoveryStage.IDLE,
+    val discoveryWarning: String? = null,
     val currentProfile: ServerProfile? = null,
     val trustCandidate: ProbeResult? = null,
     val clientInfo: ClientInfo? = null,

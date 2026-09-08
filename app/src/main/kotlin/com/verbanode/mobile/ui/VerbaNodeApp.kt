@@ -187,13 +187,13 @@ private fun ServerScreen(viewModel: AppViewModel, activity: MainActivity) {
         item {
             DashboardCard(
                 title = "Connect to VerbaNode",
-                subtitle = "Choose a saved server, run one LAN scan, scan a pairing QR, or connect manually.",
+                subtitle = "Scan this Wi-Fi with saved-server, mDNS, broadcast, and HTTPS fallback discovery, or connect manually.",
             ) {
                 Button(
                     onClick = activity::ensureLocalNetworkAndDiscover,
                     enabled = !state.discoveryActive,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (state.discoveryActive) "Scanning this Wi-Fi…" else "Scan this Wi-Fi once") }
+                ) { Text(if (state.discoveryActive) "Scanning this Wi-Fi…" else "Scan this Wi-Fi") }
                 OutlinedButton(
                     onClick = { scanVerbaNodeQr(activity, activity::pairFromQrWithPermission, viewModel::reportError) },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -202,14 +202,22 @@ private fun ServerScreen(viewModel: AppViewModel, activity: MainActivity) {
                     Modifier.fillMaxWidth().padding(top = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Pill(if (state.discoveryActive) "SCANNING" else "ONE-SHOT")
+                    Pill(if (state.discoveryActive) "SCANNING" else "READY")
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (state.discoveryActive) "Discovery stops automatically after 6.5 seconds."
-                        else "Results stay available until you choose to scan again.",
+                        if (state.discoveryActive) state.discoveryStage.label
+                        else "Verified results stay available until you scan again.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
+                    )
+                }
+                state.discoveryWarning?.takeIf { it.isNotBlank() }?.let { warning ->
+                    Text(
+                        warning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 8.dp),
                     )
                 }
             }
@@ -236,9 +244,13 @@ private fun ServerScreen(viewModel: AppViewModel, activity: MainActivity) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 2.dp),
                         )
-                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(
+                            Modifier.padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            Pill("VERIFIED")
+                            Pill(server.discoverySource.label.uppercase())
                             Pill("Core ${server.version ?: "?"}")
-                            Pill("API ${server.apiVersion ?: "?"}")
                         }
                         Button(
                             onClick = { viewModel.selectDiscovered(server) },

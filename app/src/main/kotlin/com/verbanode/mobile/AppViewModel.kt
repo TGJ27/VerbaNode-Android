@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.verbanode.mobile.audio.PttRecorder
 import com.verbanode.mobile.discovery.DiscoveredServer
 import com.verbanode.mobile.discovery.LanDiscovery
+import com.verbanode.mobile.discovery.DiscoveryStage
 import com.verbanode.mobile.network.Agent
 import com.verbanode.mobile.network.ApiException
 import com.verbanode.mobile.network.AuthSession
@@ -37,7 +38,7 @@ import java.util.UUID
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
-        private const val DISCOVERY_WINDOW_MS = 6500L
+        private const val DISCOVERY_WINDOW_MS = 10_000L
     }
 
     private val store = ProfileStore(application)
@@ -83,24 +84,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         discoveryStopJob?.cancel()
         val service = LanDiscovery(
             getApplication<Application>(),
-            onUpdate = { values -> viewModelScope.launch { _ui.update { it.copy(discovered = values) } } },
-            onError = { message ->
-                viewModelScope.launch {
-                    discoveryStopJob?.cancel()
-                    discoveryStopJob = null
-                    discovery = null
-                    _ui.update { it.copy(error = message, discoveryActive = false) }
-                }
+            savedProfiles = _ui.value.profiles,
+            onUpdate = { values ->
+                viewModelScope.launch { _ui.update { it.copy(discovered = values) } }
+            },
+            onStage = { stage ->
+                viewModelScope.launch { _ui.update { it.copy(discoveryStage = stage) } }
+            },
+            onWarning = { message ->
+                viewModelScope.launch { _ui.update { it.copy(discoveryWarning = message) } }
             },
         )
         discovery = service
-        _ui.update { it.copy(discoveryActive = true, discovered = emptyList(), error = null, notice = null) }
+        _ui.update {
+            it.copy(
+                discoveryActive = true,
+                discoveryStage = DiscoveryStage.SAVED,
+                discoveryWarning = null,
+                discovered = emptyList(),
+                error = null,
+                notice = null,
+            )
+        }
         service.start()
         discoveryStopJob = viewModelScope.launch {
             delay(DISCOVERY_WINDOW_MS)
             stopDiscovery(clearResults = false)
             if (_ui.value.discovered.isEmpty()) {
-                _ui.update { it.copy(notice = "No VerbaNode found. Scan again or use manual connection.") }
+                _ui.update {
+                    it.copy(
+                        notice = "No reachable VerbaNode was verified. If both devices are on the same Wi-Fi, check Windows Private-network firewall or router client isolation, then scan again.",
+                    )
+                }
             }
         }
     }
@@ -113,6 +128,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update {
             it.copy(
                 discoveryActive = false,
+                discoveryStage = DiscoveryStage.COMPLETE,
                 discovered = if (clearResults) emptyList() else it.discovered,
             )
         }

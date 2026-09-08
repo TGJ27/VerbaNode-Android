@@ -1,24 +1,29 @@
-# VerbaNode Android v0.5.1 — Agent Management + Mobile Parity
+# VerbaNode Android v0.5.2 — Connection + Architecture
 
-## Agent workspace
+## Same-Wi-Fi discovery
 
-- Adds search and Active-only filtering with explicit refresh, loading, error, empty, and no-match states.
-- Expands agent editing to full identity, LLM, STT/TTS, Kokoro voice, speech rate/volume, sampling, token/context, tools, and Knowledge Library controls.
-- Adds AI-assisted role/system-prompt/greeting generation through Core's existing `/api/agents/generate-role` endpoint.
-- Uses Core configuration choices for Edge/Kokoro voices and model/STT selections instead of free-form voice entry.
-- Shows per-agent Knowledge/tool counts and keeps activation and backup actions on the agent card.
-- Adds explicit confirmations before clearing memory or deleting an agent, with the retained/deleted data called out.
+- Probes remembered VerbaNode profiles immediately using their saved TLS SPKI.
+- Keeps Android NSD/mDNS discovery and retries transient resolve failures instead of silently dropping them.
+- Adds active UDP discovery protocol v1 against Core v0.12.5. UDP/mDNS metadata is treated only as a hint.
+- Adds a bounded IPv4 HTTPS fallback over the phone's local /24 window when multicast/broadcast discovery does not produce a verified result quickly.
+- Uses limited concurrency and short unauthenticated probe timeouts for subnet fallback.
+- Deduplicates results by stable Core instance ID, then TLS SPKI, then normalized URL.
 
-## Core contract and CI
+## Security
 
-- Requires VerbaNode Core v0.12.4+ so AI role generation is advertised in the versioned mobile contract.
-- Installs the API-37 SDK package as `platforms;android-37.0` in GitHub Actions.
-- Updates checkout, Java, Android setup, Gradle setup, and artifact-upload actions to current Node-24-native majors.
-- Uses the repository Gradle wrapper in CI.
-- Unit-test/lint report uploads warn rather than fail when an earlier build step produced no report files.
+- Every discovery candidate must pass HTTPS `/api/client-info`, Android protocol compatibility checks, and TLS certificate/SPKI verification before it is shown as connectable.
+- Discovery never sends a PIN, session token, trusted-device credential, or pairing secret.
+
+## UX / architecture
+
+- Scan window increases from 6.5 to 10 seconds and shows staged progress: saved servers, LAN discovery, subnet fallback, complete.
+- Verified results remain visible after the scan.
+- mDNS failure is no longer fatal to the entire scan; independent fallback transports continue.
+- Connection discovery responsibilities stay isolated in the discovery package instead of growing `AppViewModel`.
 
 ## Release
 
-- Version name: `0.5.1`
-- Version code: `22`
+- Version name: `0.5.2`
+- Version code: `23`
+- Recommended Core: VerbaNode v0.12.5+
 - REST API v1 and WebSocket protocol v1 remain unchanged.
