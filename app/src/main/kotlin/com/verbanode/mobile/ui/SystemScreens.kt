@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,6 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -35,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.BuildConfig
@@ -58,26 +62,43 @@ private fun JSONArray.objectList(): List<JSONObject> = buildList {
 internal fun SettingsScreen(viewModel: AppViewModel) {
     val state by viewModel.ui.collectAsState()
     var section by remember { mutableStateOf("conversation") }
+    val sections = listOf(
+        "conversation" to "Conversation",
+        "audio" to "Audio",
+        "models" to "AI / Models",
+        "runtime" to "Runtime",
+    )
     ManagementSubpage(viewModel, "Settings") { padding ->
         LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.fillMaxSize().padding(padding).imePadding(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { Feedback(viewModel) }
             item {
-                DashboardCard("Settings categories", "Same Core settings used by the web dashboard.") {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (section == "conversation") Button({ section = "conversation" }, Modifier.weight(1f)) { Text("Conversation") }
-                        else OutlinedButton({ section = "conversation" }, Modifier.weight(1f)) { Text("Conversation") }
-                        if (section == "audio") Button({ section = "audio" }, Modifier.weight(1f)) { Text("Audio") }
-                        else OutlinedButton({ section = "audio" }, Modifier.weight(1f)) { Text("Audio") }
-                    }
-                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (section == "models") Button({ section = "models" }, Modifier.weight(1f)) { Text("AI / Models") }
-                        else OutlinedButton({ section = "models" }, Modifier.weight(1f)) { Text("AI / Models") }
-                        if (section == "runtime") Button({ section = "runtime" }, Modifier.weight(1f)) { Text("Runtime") }
-                        else OutlinedButton({ section = "runtime" }, Modifier.weight(1f)) { Text("Runtime") }
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Core settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Configure the same live VerbaNode settings exposed by the Windows dashboard.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 3.dp, bottom = 10.dp),
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(sections.size) { index ->
+                                val (key, label) = sections[index]
+                                FilterChip(
+                                    selected = section == key,
+                                    onClick = { section = key },
+                                    label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -357,10 +378,26 @@ internal fun DiagnosticsScreen(viewModel: AppViewModel, activity: MainActivity) 
     ManagementSubpage(viewModel, "Diagnostics") { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { Feedback(viewModel) }
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("System overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        DiagnosticValueRow("Android", "v${BuildConfig.VERSION_NAME}")
+                        DiagnosticValueRow("Core", clientInfo?.serverVersion ?: profile?.lastServerVersion ?: "unknown")
+                        DiagnosticValueRow("Connection", state.connectionLabel)
+                        DiagnosticValueRow("TLS identity", if ((profile?.spkiSha256 ?: clientInfo?.certificateSpkiSha256).isNullOrBlank()) "Unknown" else "Verified")
+                        DiagnosticValueRow("Contract", healthText(compatibilityHealth))
+                    }
+                }
+            }
             item {
                 DashboardCard("Compatibility", "Mobile/Core protocol compatibility checked before credentials are used.") {
                     Text("Android v${BuildConfig.VERSION_NAME} · Core ${clientInfo?.serverVersion ?: profile?.lastServerVersion ?: compatibility.optString("server_version", "unknown")}", fontWeight = FontWeight.Bold)
@@ -458,28 +495,93 @@ internal fun DiagnosticsScreen(viewModel: AppViewModel, activity: MainActivity) 
 }
 
 @Composable
+private fun DiagnosticValueRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
 internal fun DataScreen(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
     val status = state.backupStatus ?: JSONObject()
-    ManagementSubpage(viewModel, "Data & Recovery") { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val recovery = status.optJSONArray("recovery_backups") ?: JSONArray()
+    ManagementSubpage(viewModel, "Backups / Restore") { padding ->
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             item { Feedback(viewModel) }
             item {
-                DashboardCard("Backup status", "VerbaNode's SQLite backup/recovery layer remains authoritative; the phone only transfers the archive.") {
-                    Text("Backup format: ${status.optInt("format_version", 0)}")
-                    Text("Database schema: ${status.optInt("schema_version", 0)} / ${status.optInt("current_schema_version", 0)}")
-                    val recovery = status.optJSONArray("recovery_backups") ?: JSONArray()
-                    Text("Recovery snapshots: ${recovery.length()}")
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Create Backup", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Save your agents, knowledge, settings, and Core data to a backup archive.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                        Button(
+                            onClick = { viewModel.exportBackup { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        ) { Text("Create Backup") }
+                    }
                 }
             }
             item {
-                DashboardCard("Backup & restore", "Restore replaces Core data and may require restarting VerbaNode.") {
-                    Button(
-                        onClick = { viewModel.exportBackup { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Download full backup") }
-                    OutlinedButton(onClick = activity::chooseBackupForRestore, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Restore from backup ZIP") }
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Restore Backup", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Restore from a previous VerbaNode backup. Core validates the archive and creates a safety snapshot first.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                        OutlinedButton(onClick = activity::chooseBackupForRestore, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Select Backup File") }
+                    }
                 }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Recent Backups", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("${recovery.length()} snapshots", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (recovery.length() == 0) {
+                item { Text("No automatic recovery snapshots yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            } else {
+                items(minOf(recovery.length(), 8)) { index ->
+                    val item = recovery.optJSONObject(index) ?: JSONObject()
+                    val sizeMb = item.optLong("size_bytes", 0L).toDouble() / (1024.0 * 1024.0)
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.optString("name", "Recovery snapshot"), fontWeight = FontWeight.SemiBold)
+                                Text(item.optString("modified_at").replace('T', ' ').removeSuffix("+00:00"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("${"%.1f".format(sizeMb)} MB", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            item {
+                Text(
+                    "Backup format v${status.optInt("format_version", 0)} · Database schema ${status.optInt("schema_version", 0)} / ${status.optInt("current_schema_version", 0)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

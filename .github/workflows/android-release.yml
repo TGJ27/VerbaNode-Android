@@ -52,7 +52,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.3-release-lint-reports
+          name: VerbaNode-Android-v0.5.4-release-lint-reports
           path: app/build/reports/lint-results-release.*
           if-no-files-found: warn
       - name: Build signed release APK
@@ -70,14 +70,14 @@ jobs:
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
           grep -Fq "package: name='com.verbanode.mobile'" <<<"$BADGING"
-          grep -Fq "versionCode='24'" <<<"$BADGING"
-          grep -Fq "versionName='0.5.3'" <<<"$BADGING"
+          grep -Fq "versionCode='33'" <<<"$BADGING"
+          grep -Fq "versionName='0.5.4'" <<<"$BADGING"
           mkdir -p dist
-          cp "$APK" dist/VerbaNode-Android-v0.5.3.apk
-          sha256sum dist/VerbaNode-Android-v0.5.3.apk > dist/VerbaNode-Android-v0.5.3.apk.sha256
+          cp "$APK" dist/VerbaNode-Android-v0.5.4.apk
+          sha256sum dist/VerbaNode-Android-v0.5.4.apk > dist/VerbaNode-Android-v0.5.4.apk.sha256
       - uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.3-release-apk
+          name: VerbaNode-Android-v0.5.4-release-apk
           path: |
-            dist/VerbaNode-Android-v0.5.3.apk
-            dist/VerbaNode-Android-v0.5.3.apk.sha256
+            dist/VerbaNode-Android-v0.5.4.apk
+            dist/VerbaNode-Android-v0.5.4.apk.sha256

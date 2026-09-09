@@ -1,5 +1,9 @@
 # VerbaNode Android
 
+## v0.5.4 — UI/UX overhaul (Phases 1–3)
+
+Polishes the existing light-theme Android experience without changing the Core contract: connection stays outside the authenticated main menu with Saved / Scan Wi-Fi / Manual views, Home uses compact server status and equal-height feature cards, primary navigation prioritizes Home / Chat / Agents / Knowledge / More, and Chat gains an accurate Windows-host Convo Mode switch plus new/clear chat actions and draft-safe send retry behavior. Requires Core v0.12.6+.
+
 ## v0.5.3 Release + Diagnostics
 
 Turns the existing Core diagnostics backend into a structured mobile troubleshooting surface: Android/Core compatibility and pinned contract fingerprint, TLS trust identity, Core engine/pipeline health, recent sanitized logs, structured self-test results, and privacy-explicit diagnostics export. CI also builds a separate minified/R8 smoke APK while keeping the production release unminified. Requires Core v0.12.6+.
@@ -42,13 +46,13 @@ Production and test Kotlin now each have one canonical source root. Gradle compi
 
 Native Android management client for VerbaNode.
 
-**Current version:** v0.5.3  
+**Current version:** v0.5.4  
 **Required Core:** VerbaNode v0.12.6+  
 **Transport:** local-network HTTPS/WSS only
 
 ## What it manages
 
-The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.5.3 adds structured diagnostics, compatibility visibility and release smoke gates while preserving the Agent, Knowledge, audio, plugin, settings, diagnostics, and recovery management added in earlier releases.
+The Android app uses the same VerbaNode Core REST/WebSocket APIs as the web dashboard. v0.5.4 Phase 1 polishes connection, Home/navigation and Chat. Phase 2 adds dedicated Type to Talk and Push to Talk experiences. Phase 3 polishes Agents, Knowledge, Scripts/Queue, Audio and Backups/Restore, and adds a compact Chat pipeline status indicator while preserving the underlying Core APIs.
 
 - Dashboard/system state
 - Agents, including Knowledge Library assignments
@@ -97,7 +101,7 @@ The app intentionally does **not** provide cloud remote access and does not perf
 
 ## Source layout
 
-Android v0.5.3 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
+Android v0.5.4 uses explicit canonical Kotlin roots for production and tests: `app/src/main/kotlin`, `app/src/test/kotlin`, and `app/src/androidTest/kotlin`. Older revisions used `src/*/java` for Kotlin, and changed-files overlays could leave obsolete production or test files behind. Gradle now ignores those legacy Kotlin files so an overlay cannot mix incompatible source generations.
 
 ## Build debug APK
 
@@ -138,7 +142,7 @@ VerbaNode Core v0.12.6+ (Windows)
         │ HTTPS / WSS on LAN
         │ REST API v1 + WS v1
         ▼
-VerbaNode Android v0.5.3
+VerbaNode Android v0.5.4
         │
         ├── Home / system dashboard
         ├── Chat / PTT

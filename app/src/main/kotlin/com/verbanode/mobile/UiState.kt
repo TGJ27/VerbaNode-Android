@@ -13,7 +13,7 @@ import org.json.JSONObject
 
 enum class AppScreen {
     SERVERS, TRUST, LOGIN,
-    HOME, CHAT, AGENTS, MORE, KNOWLEDGE, SCRIPTS, AUDIO, TYPE_TO_TALK, PLUGINS, SETTINGS,
+    HOME, CHAT, AGENTS, MORE, KNOWLEDGE, SCRIPTS, AUDIO, TYPE_TO_TALK, PUSH_TO_TALK, PLUGINS, SETTINGS,
     DEVICES, DIAGNOSTICS, DATA, STATUS
 }
 
@@ -63,6 +63,9 @@ data class MobileUiState(
     val audioLibraryItems: List<JSONObject> = emptyList(),
     val audioLibraryPlaying: String? = null,
     val chatAutoScroll: Boolean = true,
+    val chatDraft: String = "",
+    val chatPendingText: String? = null,
+    val chatRetryText: String? = null,
     val pluginItems: List<JSONObject> = emptyList(),
     val pluginSummary: JSONObject? = null,
     val modelItems: List<JSONObject> = emptyList(),

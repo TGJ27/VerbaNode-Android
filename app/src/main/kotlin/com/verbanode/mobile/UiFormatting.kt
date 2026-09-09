@@ -1,6 +1,6 @@
 package com.verbanode.mobile
 
-internal fun friendlyError(error: Exception): String =
+internal fun friendlyError(error: Throwable): String =
     error.message ?: error.javaClass.simpleName
 
 internal fun pipelineStatusLabel(stage: String, mode: String): String = when (stage.lowercase()) {

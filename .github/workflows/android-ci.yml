@@ -43,7 +43,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.3-unit-test-reports
+          name: VerbaNode-Android-v0.5.4-unit-test-reports
           path: |
             app/build/test-results/testDebugUnitTest/**
             app/build/reports/tests/testDebugUnitTest/**
@@ -54,7 +54,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.3-lint-reports
+          name: VerbaNode-Android-v0.5.4-lint-reports
           path: app/build/reports/lint-results-debug.*
           if-no-files-found: warn
       - name: Build debug APK
@@ -69,10 +69,10 @@ jobs:
           test -s "$SMOKE_APK"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$SMOKE_APK")"
           grep -Fq "package: name='com.verbanode.mobile'" <<<"$BADGING"
-          grep -Fq "versionCode='24'" <<<"$BADGING"
-          grep -Fq "versionName='0.5.3'" <<<"$BADGING"
+          grep -Fq "versionCode='33'" <<<"$BADGING"
+          grep -Fq "versionName='0.5.4'" <<<"$BADGING"
           echo "Minified smoke APK verified: $SMOKE_APK"
       - uses: actions/upload-artifact@v7
         with:
-          name: VerbaNode-Android-v0.5.3-debug-apk
+          name: VerbaNode-Android-v0.5.4-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk

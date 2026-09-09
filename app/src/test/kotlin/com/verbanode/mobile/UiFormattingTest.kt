@@ -31,4 +31,9 @@ class UiFormattingTest {
         assertEquals("boom", friendlyError(IllegalStateException("boom")))
         assertEquals("IllegalStateException", friendlyError(IllegalStateException()))
     }
+
+    @Test
+    fun friendlyErrorAcceptsGenericThrowable() {
+        assertEquals("refresh failed", friendlyError(Throwable("refresh failed")))
+    }
 }

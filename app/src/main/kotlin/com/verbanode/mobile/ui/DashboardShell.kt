@@ -20,16 +20,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Description
@@ -42,6 +46,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Security
@@ -50,11 +55,15 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -64,6 +73,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -99,59 +109,65 @@ internal fun ManagementScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val state by viewModel.ui.collectAsState()
-    val compactChat = selected == AppScreen.CHAT
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Column(
-                Modifier
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(horizontal = 16.dp, vertical = if (compactChat) 6.dp else 10.dp)
-            ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(R.drawable.verbanode_logo),
-                        contentDescription = "VerbaNode logo",
-                        modifier = Modifier.size(if (compactChat) 36.dp else 44.dp).clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Fit,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "VerbaNode",
-                        style = if (compactChat) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = viewModel::openSettings) { Icon(Icons.Outlined.Settings, "Settings") }
-                }
-                if (!compactChat) {
-                    Spacer(Modifier.height(10.dp))
-                    ServerStatusCard(viewModel)
-                }
-                if (title.isNotBlank() && selected != AppScreen.HOME) {
-                    if (selected == AppScreen.CHAT) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 4.dp, start = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text("Auto-scroll", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(6.dp))
-                            Switch(checked = state.chatAutoScroll, onCheckedChange = viewModel::setChatAutoScroll)
-                        }
-                    } else {
-                        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp, start = 2.dp))
+            if (selected == AppScreen.HOME) {
+                Column(
+                    Modifier
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "VerbaNode",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = viewModel::openSettings) { Icon(Icons.Outlined.Settings, "Settings") }
                     }
+                    CompactServerStatus(viewModel)
+                }
+            } else {
+                Column(
+                    Modifier
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(R.drawable.verbanode_logo),
+                            contentDescription = "VerbaNode logo",
+                            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Fit,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text("VerbaNode", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        IconButton(onClick = viewModel::openSettings) { Icon(Icons.Outlined.Settings, "Settings") }
+                    }
+                    if (title.isNotBlank()) Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp, start = 2.dp))
                 }
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                NavigationBarItem(selected == AppScreen.HOME, viewModel::openHome, { Icon(Icons.Outlined.Home, null) }, label = { Text("Home") })
-                NavigationBarItem(selected == AppScreen.CHAT, viewModel::openChat, { Icon(Icons.AutoMirrored.Outlined.Chat, null) }, label = { Text("Chat") })
-                NavigationBarItem(selected == AppScreen.SCRIPTS, viewModel::openScripts, { Icon(Icons.Outlined.Description, null) }, label = { Text("Script") })
-                NavigationBarItem(selected == AppScreen.AUDIO, viewModel::openAudio, { Icon(Icons.Outlined.GraphicEq, null) }, label = { Text("Audio") })
-                NavigationBarItem(selected == AppScreen.MORE, { viewModel.navigate(AppScreen.MORE) }, { Icon(Icons.Outlined.MoreHoriz, null) }, label = { Text("More") })
+            if (selected == AppScreen.HOME) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    NavigationBarItem(true, viewModel::openHome, { Icon(Icons.Outlined.Home, null) }, label = { Text("Home") })
+                    NavigationBarItem(false, viewModel::openAgents, { Icon(Icons.Outlined.Person, null) }, label = { Text("Agents") })
+                    NavigationBarItem(false, viewModel::openChat, { Icon(Icons.AutoMirrored.Outlined.Chat, null) }, label = { Text("Chat") })
+                    NavigationBarItem(false, { viewModel.navigate(AppScreen.MORE) }, { Icon(Icons.Outlined.MoreHoriz, null) }, label = { Text("More") })
+                }
+            } else {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    NavigationBarItem(selected == AppScreen.HOME, viewModel::openHome, { Icon(Icons.Outlined.Home, null) }, label = { Text("Home") })
+                    NavigationBarItem(selected == AppScreen.CHAT, viewModel::openChat, { Icon(Icons.AutoMirrored.Outlined.Chat, null) }, label = { Text("Chat") })
+                    NavigationBarItem(selected == AppScreen.AGENTS, viewModel::openAgents, { Icon(Icons.Outlined.Person, null) }, label = { Text("Agents") })
+                    NavigationBarItem(selected == AppScreen.KNOWLEDGE, viewModel::openKnowledge, { Icon(Icons.Outlined.Storage, null) }, label = { Text("Knowledge") })
+                    NavigationBarItem(selected == AppScreen.MORE, { viewModel.navigate(AppScreen.MORE) }, { Icon(Icons.Outlined.MoreHoriz, null) }, label = { Text("More") })
+                }
             }
         },
         content = content,
@@ -159,68 +175,74 @@ internal fun ManagementScaffold(
 }
 
 @Composable
-private fun ServerStatusCard(viewModel: AppViewModel) {
+private fun CompactServerStatus(viewModel: AppViewModel) {
     val state by viewModel.ui.collectAsState()
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(18.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = viewModel::goServers).padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                Icon(Icons.Outlined.Devices, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp).size(23.dp))
-            }
-            Spacer(Modifier.width(11.dp))
-            Column(Modifier.weight(1f)) {
-                Text(state.currentProfile?.name ?: "VerbaNode", fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (state.connected) Success else MaterialTheme.colorScheme.error))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (state.connected) "Connected" else state.connectionLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Icon(Icons.Outlined.Wifi, null, tint = if (state.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(12.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                Text("Core ${state.clientInfo?.serverVersion ?: state.currentProfile?.lastServerVersion ?: "?"}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                Text("API ${state.clientInfo?.apiVersion ?: 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (state.connected) Success else MaterialTheme.colorScheme.error))
+        Spacer(Modifier.width(7.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (state.connected) "Connected" else state.connectionLabel,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (state.connected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+            )
+            Text(
+                buildString {
+                    append(state.currentProfile?.name ?: "VerbaNode")
+                    state.currentProfile?.baseUrl?.removePrefix("https://")?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
 
 @Composable
 internal fun DashboardScreen(viewModel: AppViewModel) {
+    val specs = Phase1UiSpec.homeCards
     ManagementScaffold(viewModel, "", AppScreen.HOME) { padding ->
         LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.surface),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             item { Feedback(viewModel) }
             item {
                 FeatureRow(
-                    Feature(Icons.AutoMirrored.Outlined.Chat, "Chat", "Talk with your AI", viewModel::openChat),
-                    Feature(Icons.Outlined.Person, "Agents", "Manage AI agents", viewModel::openAgents),
+                    Feature(Icons.Outlined.Person, specs[0].title, specs[0].subtitle, viewModel::openAgents),
+                    Feature(Icons.Outlined.Storage, specs[1].title, specs[1].subtitle, viewModel::openKnowledge),
                 )
             }
             item {
                 FeatureRow(
-                    Feature(Icons.Outlined.Extension, "Plugins", "Extend capabilities", viewModel::openPlugins),
-                    Feature(Icons.Outlined.Description, "Scripts", "Scripts and queue", viewModel::openScripts),
+                    Feature(Icons.AutoMirrored.Outlined.Chat, specs[2].title, specs[2].subtitle, viewModel::openChat),
+                    Feature(Icons.AutoMirrored.Outlined.VolumeUp, specs[3].title, specs[3].subtitle, viewModel::openTypeToTalk),
                 )
             }
             item {
                 FeatureRow(
-                    Feature(Icons.Outlined.GraphicEq, "Audio", "Multi-format audio library", viewModel::openAudio),
-                    Feature(Icons.Outlined.MonitorHeart, "Diagnostics", "System health", viewModel::openDiagnostics),
+                    Feature(Icons.Outlined.Mic, specs[4].title, specs[4].subtitle, viewModel::openPushToTalk),
+                    Feature(Icons.Outlined.Description, specs[5].title, specs[5].subtitle, viewModel::openScripts),
                 )
             }
             item {
-                FeatureCard(
-                    Feature(Icons.Outlined.Mic, "Type to Talk", "Queue direct TTS speech", viewModel::openTypeToTalk),
-                    Modifier.fillMaxWidth(),
+                FeatureRow(
+                    Feature(Icons.Outlined.GraphicEq, specs[6].title, specs[6].subtitle, viewModel::openAudio),
+                    Feature(Icons.Outlined.CloudUpload, specs[7].title, specs[7].subtitle, viewModel::openData),
                 )
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    FeatureCard(Feature(Icons.Outlined.MonitorHeart, specs[8].title, specs[8].subtitle, viewModel::openDiagnostics), Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
+                }
             }
         }
     }
@@ -239,24 +261,19 @@ private fun FeatureRow(first: Feature, second: Feature) {
 @Composable
 private fun FeatureCard(feature: Feature, modifier: Modifier) {
     Card(
-        modifier = modifier.clickable(onClick = feature.action),
+        modifier = modifier.heightIn(min = 88.dp).clickable(onClick = feature.action),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(15.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Icon(feature.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(8.dp).size(22.dp))
-                }
-                Spacer(Modifier.weight(1f))
-                Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(feature.title, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+        Column(Modifier.padding(horizontal = 11.dp, vertical = 10.dp)) {
+            Icon(feature.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Text(feature.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 7.dp))
             Text(
                 feature.subtitle,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 3.dp),
+                modifier = Modifier.padding(top = 1.dp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -272,60 +289,61 @@ private fun ConversationControls(viewModel: AppViewModel, activity: Activity) {
     val controllerReady = state.connected && state.session != null
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            ConversationAction(
-                Icons.Outlined.PlayArrow,
-                if (state.conversationActive) "Listening" else "Start",
-                MaterialTheme.colorScheme.primary,
-                enabled = controllerReady && !state.conversationActive && !state.busy,
-                onClick = viewModel::startConversation,
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp)) {
+            Text("Push to Talk", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "Voice controls remain available here in Phase 1; the dedicated Push to Talk screen is polished in Phase 2.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
             )
-
-            val pttModifier = when {
-                !controllerReady -> Modifier.clickable { viewModel.reportError("VerbaNode is not connected") }
-                !micGranted -> Modifier.clickable { micPermission.launch(Manifest.permission.RECORD_AUDIO) }
-                else -> Modifier.pointerInput(controllerReady, micGranted) {
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        viewModel.startPtt()
-                        val up = waitForUpOrCancellation()
-                        if (up != null) viewModel.stopPtt() else viewModel.cancelPtt()
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                val pttModifier = when {
+                    !controllerReady -> Modifier.clickable { viewModel.reportError("VerbaNode is not connected") }
+                    !micGranted -> Modifier.clickable { micPermission.launch(Manifest.permission.RECORD_AUDIO) }
+                    else -> Modifier.pointerInput(controllerReady, micGranted) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            viewModel.startPtt()
+                            val up = waitForUpOrCancellation()
+                            if (up != null) viewModel.stopPtt() else viewModel.cancelPtt()
+                        }
                     }
                 }
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = pttModifier.padding(horizontal = 5.dp)) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (state.recording) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                    shadowElevation = if (controllerReady) 5.dp else 0.dp,
-                ) {
-                    Icon(
-                        Icons.Outlined.Mic,
-                        null,
-                        tint = Color.White.copy(alpha = if (controllerReady) 1f else 0.55f),
-                        modifier = Modifier.padding(13.dp).size(28.dp),
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = pttModifier.padding(horizontal = 5.dp)) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (state.recording) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                        shadowElevation = if (controllerReady) 5.dp else 0.dp,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Mic,
+                            null,
+                            tint = Color.White.copy(alpha = if (controllerReady) 1f else 0.55f),
+                            modifier = Modifier.padding(13.dp).size(28.dp),
+                        )
+                    }
+                    Text(
+                        if (state.recording) "Release" else "Hold to Talk",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
-                Text(
-                    if (state.recording) "Release" else "Hold to Talk",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 4.dp),
+
+                ConversationAction(
+                    Icons.Outlined.Stop,
+                    if (state.recording) "Cancel" else "Stop audio",
+                    MaterialTheme.colorScheme.error,
+                    enabled = controllerReady && (state.recording || state.chatStatus in setOf("Speaking", "Preparing speech")) && !state.busy,
+                    onClick = { if (state.recording) viewModel.cancelPtt() else viewModel.stopTts() },
                 )
             }
-
-            ConversationAction(
-                Icons.Outlined.Stop,
-                "Stop",
-                MaterialTheme.colorScheme.error,
-                enabled = controllerReady && (state.conversationActive || state.recording || state.mode in setOf("browser_ptt", "ptt")) && !state.busy,
-                onClick = viewModel::stopConversation,
-            )
         }
     }
 }
@@ -357,68 +375,178 @@ private fun ConversationAction(
 }
 
 @Composable
-internal fun ChatScreen(viewModel: AppViewModel, activity: Activity) {
+internal fun ChatScreen(viewModel: AppViewModel) {
     val state by viewModel.ui.collectAsState()
-    var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var menuExpanded by remember { mutableStateOf(false) }
+
     LaunchedEffect(state.messages.size, state.chatAutoScroll) {
-        if (state.chatAutoScroll && state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.lastIndex)
-        }
+        if (state.chatAutoScroll && state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.lastIndex)
     }
-    ManagementScaffold(viewModel, "Chat", AppScreen.CHAT) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
-            Feedback(viewModel)
-            Card(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(20.dp),
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(12.dp),
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (state.messages.isEmpty()) item {
-                        Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Image(painterResource(R.drawable.verbanode_logo), "VerbaNode", Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)))
-                            Text("No messages yet", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                    IconButton(onClick = viewModel::openHome) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+                    Text("Chat", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Outlined.MoreVert, "Chat options") }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("New chat") }, onClick = { menuExpanded = false; viewModel.newConversation() })
+                            DropdownMenuItem(text = { Text("Clear chat") }, onClick = { menuExpanded = false; viewModel.clearCurrentConversation() }, enabled = state.conversationId != null && state.messages.isNotEmpty())
+                            DropdownMenuItem(text = { Text(if (state.chatAutoScroll) "Auto-scroll: On" else "Auto-scroll: Off") }, onClick = { viewModel.setChatAutoScroll(!state.chatAutoScroll); menuExpanded = false })
+                            DropdownMenuItem(text = { Text("Push to Talk") }, onClick = { menuExpanded = false; viewModel.openPushToTalk() })
                         }
                     }
-                    items(state.messages, key = { it.id }) { ChatBubble(it) }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
+            Feedback(viewModel)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.clickable(onClick = viewModel::openAgents),
+                ) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                            Icon(Icons.Outlined.Person, null, tint = Color.White, modifier = Modifier.padding(4.dp).size(12.dp))
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text(state.activeAgent?.name ?: "No agent", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(4.dp))
+                        Text("⌄", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Surface(
+                    shape = RoundedCornerShape(9.dp),
+                    color = if (state.conversationActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.clickable(
+                        enabled = state.connected && state.session != null && !state.busy,
+                        onClick = { if (state.conversationActive) viewModel.stopConversation() else viewModel.startConversation() },
+                    ),
+                ) {
+                    Text(
+                        if (state.conversationActive) "∞  Convo Mode ON" else "∞  Convo Mode OFF",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (state.conversationActive) Color.White else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    )
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp),
+            Text(
+                if (state.conversationActive) "Windows host listening" else "Windows host listening is off",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(end = 4.dp, bottom = 4.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            )
+            val compactStatus = Phase3UiSpec.chatStatusLabel(state.connected, state.chatStatus)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Status: ${state.chatStatus}",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                )
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text(if (state.connected) "Type your message…" else "Reconnect to send messages") },
-                    modifier = Modifier.weight(1f),
-                    enabled = state.connected,
-                    maxLines = 2,
+                Box(
+                    Modifier.size(8.dp).clip(CircleShape).background(
+                        when (compactStatus) {
+                            "Offline" -> MaterialTheme.colorScheme.error
+                            "Ready" -> Success
+                            "Speaking" -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.tertiary
+                        }
+                    )
                 )
                 Spacer(Modifier.width(6.dp))
-                IconButton(
-                    onClick = { val value = text; text = ""; viewModel.sendMessage(value) },
-                    enabled = state.connected && text.isNotBlank(),
-                ) { Icon(Icons.AutoMirrored.Outlined.Send, "Send", tint = MaterialTheme.colorScheme.primary) }
+                Text(
+                    compactStatus,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            ConversationControls(viewModel, activity)
-            Spacer(Modifier.height(4.dp))
+
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (state.messages.isEmpty()) item {
+                    Text(
+                        "Start a conversation with ${state.activeAgent?.name ?: "your agent"}.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+                items(state.messages, key = { it.id }) { ChatBubble(it) }
+            }
+
+            state.chatRetryText?.let {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Message not sent. Draft restored.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        TextButton(onClick = viewModel::retryChatMessage) { Text("Retry") }
+                    }
+                }
+            }
+
+
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(999.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 5.dp, top = 3.dp, bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicTextField(
+                        value = state.chatDraft,
+                        onValueChange = viewModel::updateChatDraft,
+                        modifier = Modifier.weight(1f).padding(horizontal = 4.dp, vertical = 10.dp),
+                        enabled = state.connected && state.chatPendingText == null,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                        decorationBox = { innerTextField ->
+                            Box {
+                                if (state.chatDraft.isBlank()) {
+                                    Text(
+                                        if (state.connected) "Type a message…" else "Reconnect to send messages",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                        IconButton(
+                            onClick = viewModel::sendChatDraft,
+                            enabled = state.connected && state.chatDraft.isNotBlank() && state.chatPendingText == null,
+                        ) { Icon(Icons.AutoMirrored.Outlined.Send, "Send", tint = Color.White) }
+                    }
+                }
+            }
         }
     }
 }
@@ -426,20 +554,26 @@ internal fun ChatScreen(viewModel: AppViewModel, activity: Activity) {
 @Composable
 private fun ChatBubble(message: ChatMessage) {
     val user = message.role == "user"
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
-        if (!user) {
-            Image(painterResource(R.drawable.verbanode_logo), "VerbaNode", Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)))
-            Spacer(Modifier.width(7.dp))
-        }
-        Card(
-            modifier = Modifier.fillMaxWidth(0.82f),
-            colors = CardDefaults.cardColors(containerColor = if (user) MaterialTheme.colorScheme.primaryContainer else SoftBlue),
-            shape = RoundedCornerShape(16.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (user) Arrangement.End else Arrangement.Start,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.76f),
+            color = if (user) MaterialTheme.colorScheme.primaryContainer else SoftBlue,
+            shape = RoundedCornerShape(12.dp),
         ) {
-            Column(Modifier.padding(12.dp)) {
-                Text(if (user) "You" else "VerbaNode", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text(message.content, modifier = Modifier.padding(top = 3.dp))
-                message.createdAt?.let { Text(it.take(19).replace('T', ' '), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp)) }
+            Column(Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
+                Text(message.content, style = MaterialTheme.typography.bodyMedium)
+                message.createdAt?.let {
+                    Text(
+                        it.take(19).replace('T', ' '),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    )
+                }
             }
         }
     }

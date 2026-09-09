@@ -5,6 +5,10 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.verbanode.mobile.audio.PttRecorder
+import com.verbanode.mobile.chat.ChatComposerState
+import com.verbanode.mobile.chat.beginChatSend
+import com.verbanode.mobile.chat.completeChatSend
+import com.verbanode.mobile.chat.failChatSend
 import com.verbanode.mobile.discovery.DiscoveredServer
 import com.verbanode.mobile.discovery.LanDiscovery
 import com.verbanode.mobile.discovery.DiscoveryStage
@@ -486,17 +490,78 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.IO) { localApi.stopTts(token) }
     }
 
+    fun updateChatDraft(text: String) = _ui.update { state ->
+        state.copy(chatDraft = text, chatRetryText = null)
+    }
+
     fun sendMessage(text: String) {
-        if (text.isBlank()) return
-        _ui.update { it.copy(chatStatus = "Generating") }
-        runBusy {
-            val localApi = api ?: return@runBusy
-            val token = _ui.value.session?.token ?: return@runBusy
-            if (!_ui.value.connected) error("VerbaNode is not connected")
-            withContext(Dispatchers.IO) { localApi.sendText(token, text.trim(), _ui.value.conversationId) }
-            loadBootstrapInternal()
-            refreshConversationInternal()
+        updateChatDraft(text)
+        sendChatDraft()
+    }
+
+    fun sendChatDraft() {
+        val before = _ui.value
+        val started = beginChatSend(
+            ChatComposerState(
+                draft = before.chatDraft,
+                pendingText = before.chatPendingText,
+                retryText = before.chatRetryText,
+            )
+        )
+        val text = started.pendingText ?: return
+        if (before.chatPendingText != null) return
+        _ui.update {
+            it.copy(
+                chatDraft = started.draft,
+                chatPendingText = started.pendingText,
+                chatRetryText = started.retryText,
+                chatStatus = "Generating",
+                error = null,
+            )
         }
+        viewModelScope.launch {
+            try {
+                val localApi = api ?: error("Connect to VerbaNode first")
+                val token = _ui.value.session?.token ?: error("Controller session is not active")
+                if (!_ui.value.connected) error("VerbaNode is not connected")
+                withContext(Dispatchers.IO) { localApi.sendText(token, text, _ui.value.conversationId) }
+                _ui.update { current ->
+                    val finished = completeChatSend(
+                        ChatComposerState(current.chatDraft, current.chatPendingText, current.chatRetryText)
+                    )
+                    current.copy(
+                        chatDraft = finished.draft,
+                        chatPendingText = finished.pendingText,
+                        chatRetryText = finished.retryText,
+                    )
+                }
+                runCatching {
+                    loadBootstrapInternal()
+                    refreshConversationInternal()
+                }.onFailure { refreshError ->
+                    _ui.update { current -> current.copy(notice = "Message sent. Refresh delayed: ${friendlyError(refreshError)}") }
+                }
+            } catch (error: Exception) {
+                _ui.update { current ->
+                    val failed = failChatSend(
+                        ChatComposerState(current.chatDraft, current.chatPendingText, current.chatRetryText)
+                    )
+                    current.copy(
+                        chatDraft = failed.draft,
+                        chatPendingText = failed.pendingText,
+                        chatRetryText = failed.retryText,
+                        chatStatus = modeStatusLabel(current.mode),
+                        error = friendlyError(error),
+                    )
+                }
+            }
+        }
+    }
+
+    fun retryChatMessage() {
+        val retry = _ui.value.chatRetryText ?: return
+        _ui.update { it.copy(chatDraft = retry, chatRetryText = null) }
+        sendChatDraft()
     }
 
     private suspend fun refreshConversationInternal() {
@@ -666,6 +731,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openChat() {
         _ui.update { it.copy(screen = AppScreen.CHAT) }
+        viewModelScope.launch { runCatching { refreshConversationInternal() } }
+    }
+
+    fun openPushToTalk() {
+        _ui.update { it.copy(screen = AppScreen.PUSH_TO_TALK) }
         viewModelScope.launch { runCatching { refreshConversationInternal() } }
     }
 

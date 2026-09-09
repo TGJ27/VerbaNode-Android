@@ -10,12 +10,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -23,6 +29,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +48,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
@@ -136,28 +145,22 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
     ManagementScaffold(viewModel, "Agents", AppScreen.AGENTS) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(14.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { Feedback(viewModel) }
             item {
-                DashboardCard("Agent workspace", "Configure the same agent identity, models, speech, tools, and Knowledge access as the web dashboard.") {
-                    Text("${state.rawAgents.size} agents · ${toolOptions.count { it.enabled }} available tools · ${state.knowledgeLibraries.size} Knowledge libraries", style = MaterialTheme.typography.bodySmall)
-                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { creating = true }, modifier = Modifier.weight(1f)) { Text("＋ Create") }
-                        OutlinedButton(onClick = viewModel::refreshAgents, modifier = Modifier.weight(1f), enabled = !state.agentsLoading) { Text("↻ Refresh") }
-                    }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it.take(120) },
+                        label = { Text("Search agents") },
+                        placeholder = { Text("Name, role, or model") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    OutlinedButton(onClick = viewModel::refreshAgents, enabled = !state.agentsLoading) { Text("↻") }
                 }
-            }
-            item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it.take(120) },
-                    label = { Text("Search agents") },
-                    placeholder = { Text("Name, role, or model") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
             }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -186,38 +189,57 @@ internal fun AgentsScreen(viewModel: AppViewModel, activity: MainActivity) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = RoundedCornerShape(18.dp),
                 ) {
-                    Column(Modifier.padding(15.dp)) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (active) "●" else "○", color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(agent.optString("name", "Agent"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                     if (active) Pill("ACTIVE")
                                 }
-                                Text(agent.optString("role"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    agent.optString("role"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
-                            if (!active) Button(onClick = { viewModel.selectAgent(id) }) { Text("Activate") }
+                            OutlinedButton(onClick = { editing = agent }) { Text("Details") }
                         }
-                        LazyRow(Modifier.padding(top = 9.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item { Pill(agent.optString("language", "en").uppercase()) }
-                            item { Pill(agent.optString("llm_model", "model")) }
-                            item { Pill(agent.optString("tts_mode", "tts")) }
-                            item { Pill("$knowledgeCount libraries") }
-                            item { Pill("$toolCount tools") }
-                        }
-                        Text(agent.optString("greeting"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
-                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(onClick = { editing = agent }, modifier = Modifier.weight(1f)) { Text("Edit") }
-                            OutlinedButton(onClick = { memoryTarget = agent }, modifier = Modifier.weight(1f)) { Text("Clear memory") }
-                        }
-                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (active) {
+                            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { memoryTarget = agent }, modifier = Modifier.weight(1f)) { Text("Clear memory", maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = { viewModel.exportAgent(id) { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
+                                    modifier = Modifier.weight(1f),
+                                ) { Text("Backup", maxLines = 1) }
+                            }
                             OutlinedButton(
-                                onClick = { viewModel.exportAgent(id) { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Backup") }
-                            OutlinedButton(onClick = { deleteTarget = agent }, modifier = Modifier.weight(1f)) { Text("Delete") }
+                                onClick = { deleteTarget = agent },
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            ) { Text("Delete", maxLines = 1, color = MaterialTheme.colorScheme.error) }
+                        } else {
+                            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { viewModel.selectAgent(id) }, modifier = Modifier.weight(1f)) { Text("Activate", maxLines = 1) }
+                                OutlinedButton(onClick = { memoryTarget = agent }, modifier = Modifier.weight(1f)) { Text("Clear memory", maxLines = 1) }
+                            }
+                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { viewModel.exportAgent(id) { bytes, name, mime -> activity.saveDocument(bytes, name, mime) } },
+                                    modifier = Modifier.weight(1f),
+                                ) { Text("Backup", maxLines = 1) }
+                                OutlinedButton(onClick = { deleteTarget = agent }, modifier = Modifier.weight(1f)) {
+                                    Text("Delete", maxLines = 1, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         }
                     }
                 }
+            }
+            item {
+                Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ Create Agent") }
             }
         }
     }
@@ -298,10 +320,10 @@ private fun AgentEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Create agent" else "Edit agent") },
+        title = { Text(if (existing == null) "Create Agent" else "Agent Details") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                item { Text("Identity", fontWeight = FontWeight.Bold) }
+                item { Text("Agent Details", fontWeight = FontWeight.Bold) }
                 item { OutlinedTextField(name, { name = it.take(80) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth()) }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -328,7 +350,7 @@ private fun AgentEditorDialog(
                 }
 
                 item { HorizontalDivider() }
-                item { Text("Models & speech", fontWeight = FontWeight.Bold) }
+                item { Text("Model / Voice / STT", fontWeight = FontWeight.Bold) }
                 item { ChoiceField("LLM model", model, configChoices(configurationOptions, "llm_models"), Modifier.fillMaxWidth()) { model = it } }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -366,7 +388,7 @@ private fun AgentEditorDialog(
                 }
 
                 item { HorizontalDivider() }
-                item { Text("Tools", fontWeight = FontWeight.Bold) }
+                item { Text("Tools / Plugins", fontWeight = FontWeight.Bold) }
                 if (toolOptions.isEmpty()) {
                     item { Text("No tools reported by Core.", style = MaterialTheme.typography.bodySmall) }
                 } else {
@@ -530,10 +552,13 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                 val migration = state.knowledgeStatus?.optJSONObject("legacy_information_migration")
                 val migratedDocuments = migration?.optInt("migrated_documents", 0) ?: 0
                 val migratedLibraries = migration?.optInt("migrated_libraries", 0) ?: 0
-                DashboardCard("Knowledge overview", "Existing, migrated, and uploaded sources from Core") {
-                    Text("${counts.total} sources · ${counts.legacy} legacy · ${counts.current} current", style = MaterialTheme.typography.bodySmall)
-                    Text("${state.knowledgeLibraries.size} libraries · ${counts.selected} sources in selected library", style = MaterialTheme.typography.bodySmall)
-                    Text("$activeJobs ingestion jobs active · $failedJobs failed jobs", style = MaterialTheme.typography.bodySmall)
+                DashboardCard("Knowledge", null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Pill("${counts.total} SOURCES")
+                        Pill("${state.knowledgeLibraries.size} LIBRARIES")
+                        if (activeJobs > 0) Pill("$activeJobs PROCESSING")
+                        if (failedJobs > 0) Pill("$failedJobs ERRORS")
+                    }
                     if (migratedDocuments > 0) {
                         Text(
                             "Legacy migration: $migratedDocuments items across $migratedLibraries libraries",
@@ -701,12 +726,9 @@ internal fun KnowledgeScreen(viewModel: AppViewModel, activity: MainActivity) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(document.optString("title", "Document"), fontWeight = FontWeight.Bold)
-                                Text("$libraryName · ${status.uppercase()} · $chunkCount chunks", style = MaterialTheme.typography.bodySmall)
-                                document.optString("source_name").takeIf { it.isNotBlank() && it != document.optString("title") }?.let { sourceName ->
-                                    Text(sourceName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                                }
+                                Text("$sourceLabel · $chunkCount chunks · $libraryName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
-                            Pill(sourceLabel.uppercase())
+                            Pill(status.uppercase())
                         }
                         latestJob?.let { job ->
                             val kind = if (job.jobType.equals("reingest", true)) "Reprocess" else "Ingest"
@@ -881,51 +903,126 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
     val state by viewModel.ui.collectAsState()
     var editing by remember { mutableStateOf<JSONObject?>(null) }
     var creating by remember { mutableStateOf(false) }
-    ManagementScaffold(viewModel, "Scripts & Queue", AppScreen.SCRIPTS) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    var tab by remember { mutableStateOf("queue") }
+    var query by remember { mutableStateOf("") }
+    val visibleScripts = state.scriptItems.filter { script ->
+        val needle = query.trim().lowercase()
+        needle.isBlank() || script.optString("title").lowercase().contains(needle) || script.optString("text").lowercase().contains(needle)
+    }
+    ManagementScaffold(viewModel, "Scripts", AppScreen.SCRIPTS) { padding ->
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             item { Feedback(viewModel) }
-            item { Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ Create script") } }
             item {
-                DashboardCard("Queue", "State: ${state.queueState}") {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(onClick = { viewModel.queueAction("play") }, modifier = Modifier.weight(1f)) { Text("Play") }
-                        OutlinedButton(onClick = { viewModel.queueAction("pause") }, modifier = Modifier.weight(1f)) { Text("Pause") }
-                        OutlinedButton(onClick = { viewModel.queueAction("stop") }, modifier = Modifier.weight(1f)) { Text("Stop") }
-                    }
-                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Loop queue", fontWeight = FontWeight.SemiBold)
-                            Text("Repeat from the top until stopped.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(checked = state.queueLoop, onCheckedChange = viewModel::setQueueLoop)
-                    }
-                    OutlinedButton(onClick = { viewModel.queueAction("clear") }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Clear queue") }
-                    state.queueItems.forEach { item ->
-                        HorizontalDivider(Modifier.padding(vertical = 7.dp))
-                        QueueItemRow(viewModel, item)
-                    }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (tab == "queue") Button(onClick = { tab = "queue" }, modifier = Modifier.weight(1f)) { Text("Queue") }
+                    else OutlinedButton(onClick = { tab = "queue" }, modifier = Modifier.weight(1f)) { Text("Queue") }
+                    if (tab == "scripts") Button(onClick = { tab = "scripts" }, modifier = Modifier.weight(1f)) { Text("Scripts") }
+                    else OutlinedButton(onClick = { tab = "scripts" }, modifier = Modifier.weight(1f)) { Text("Scripts") }
                 }
             }
-            item { SectionTitle("Scripts") }
-            items(state.scriptItems, key = { it.optInt("id") }) { script ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    Column(Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(script.optString("title", "Script"), fontWeight = FontWeight.Bold)
-                                Text("${script.optString("language", "en")} · ${script.optString("tts_mode", "edge")}", style = MaterialTheme.typography.bodySmall)
+            if (tab == "queue") {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Playback Queue (${state.queueItems.size})", fontWeight = FontWeight.Bold)
+                                    Text("State: ${state.queueState}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Pill(if (state.queueLoop) "LOOP" else "ONCE")
                             }
-                            if (!script.optBoolean("enabled", true)) Pill("DISABLED")
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                            ) {
+                                QueueTransportControl(
+                                    icon = Icons.Outlined.PlayArrow,
+                                    label = "Play",
+                                    active = state.queueState == "playing",
+                                    onClick = { viewModel.queueAction("play") },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                QueueTransportControl(
+                                    icon = Icons.Outlined.Pause,
+                                    label = "Pause",
+                                    active = state.queueState == "paused",
+                                    onClick = { viewModel.queueAction("pause") },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                QueueTransportControl(
+                                    icon = Icons.Outlined.Stop,
+                                    label = "Stop",
+                                    onClick = { viewModel.queueAction("stop") },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                QueueTransportControl(
+                                    icon = Icons.Outlined.Repeat,
+                                    label = "Loop",
+                                    active = state.queueLoop,
+                                    onClick = { viewModel.setQueueLoop(!state.queueLoop) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (state.queueItems.isEmpty()) {
+                                Text("Queue is empty. Add a saved script from the Scripts tab.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
+                            } else {
+                                state.queueItems.forEachIndexed { index, item ->
+                                    HorizontalDivider(Modifier.padding(vertical = 7.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("${index + 1}", fontWeight = FontWeight.Bold, modifier = Modifier.width(24.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(item.optString("title", item.optString("script_title", "Queued script")), fontWeight = FontWeight.SemiBold)
+                                            Text("Pause ${item.optDouble("pause_after_seconds", 0.0)} sec", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        TextButton(onClick = { viewModel.removeQueueItem(item.optInt("id")) }) { Text("Remove") }
+                                    }
+                                }
+                            }
+                            OutlinedButton(onClick = { viewModel.queueAction("clear") }, enabled = state.queueItems.isNotEmpty(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Clear queue") }
                         }
-                        Text(script.optString("text"), style = MaterialTheme.typography.bodySmall, maxLines = 4, modifier = Modifier.padding(top = 8.dp))
-                        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(onClick = { viewModel.runScriptNow(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Run") }
-                            OutlinedButton(onClick = { viewModel.queueScript(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Queue") }
-                            OutlinedButton(onClick = { editing = script }, modifier = Modifier.weight(1f)) { Text("Edit") }
-                        }
-                        TextButton(onClick = { viewModel.deleteScript(script.optInt("id")) }) { Text("Delete") }
                     }
                 }
+            } else {
+                item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it.take(120) },
+                        label = { Text("Search scripts") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (visibleScripts.isEmpty()) {
+                    item { Text("No saved scripts match this search.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                items(visibleScripts, key = { it.optInt("id") }) { script ->
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(script.optString("title", "Script"), fontWeight = FontWeight.Bold)
+                                    Text(script.optString("text"), style = MaterialTheme.typography.bodySmall, maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (!script.optBoolean("enabled", true)) Pill("DISABLED")
+                            }
+                            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(onClick = { viewModel.runScriptNow(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Run") }
+                                OutlinedButton(onClick = { viewModel.queueScript(script.optInt("id")) }, enabled = script.optBoolean("enabled", true), modifier = Modifier.weight(1f)) { Text("Queue") }
+                                OutlinedButton(onClick = { editing = script }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                            }
+                            TextButton(onClick = { viewModel.deleteScript(script.optInt("id")) }) { Text("Delete") }
+                        }
+                    }
+                }
+                item { Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ Create Script") } }
             }
         }
     }
@@ -933,6 +1030,32 @@ internal fun ScriptsScreen(viewModel: AppViewModel) {
         ScriptDialog(editing, state.scriptDefaults, state.configurationOptions, { creating = false; editing = null }) { id, payload ->
             creating = false; editing = null; viewModel.saveScript(id, payload)
         }
+    }
+}
+
+@Composable
+private fun QueueTransportControl(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1168,10 +1291,12 @@ internal fun ConfirmDialog(title: String, message: String, onDismiss: () -> Unit
 internal fun ManagementSubpage(viewModel: AppViewModel, title: String, content: @Composable (PaddingValues) -> Unit) {
     androidx.compose.material3.Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             androidx.compose.material3.TopAppBar(
                 title = { Text(title, fontWeight = FontWeight.Bold) },
                 navigationIcon = { TextButton(onClick = { viewModel.navigate(AppScreen.MORE) }) { Text("‹ Back") } },
+                windowInsets = WindowInsets(0, 0, 0, 0),
             )
         },
         content = content,

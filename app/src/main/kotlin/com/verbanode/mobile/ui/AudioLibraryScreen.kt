@@ -34,6 +34,7 @@ import org.json.JSONObject
 internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
     var renameTarget by remember { mutableStateOf<JSONObject?>(null) }
+    var sourceFilter by remember { mutableStateOf("all") }
     ManagementScaffold(viewModel, "Audio Library", AppScreen.AUDIO) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
@@ -42,20 +43,39 @@ internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity)
         ) {
             item { Feedback(viewModel) }
             item {
-                DashboardCard("Host audio", "Upload common audio formats and play them through the VerbaNode Windows host.") {
-                    Button(onClick = activity::chooseAudioForUpload, modifier = Modifier.fillMaxWidth()) { Text("＋ Upload audio") }
-                    OutlinedButton(onClick = viewModel::stopAudio, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Stop playback") }
-                    Text(
-                        state.audioLibraryPlaying?.let { "Playing: $it" } ?: "No audio playing",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                Button(onClick = activity::chooseAudioForUpload, modifier = Modifier.fillMaxWidth()) { Text("＋ Upload Audio") }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (sourceFilter == "all") Button(onClick = { sourceFilter = "all" }, modifier = Modifier.weight(1f)) { Text("All") }
+                    else OutlinedButton(onClick = { sourceFilter = "all" }, modifier = Modifier.weight(1f)) { Text("All") }
+                    if (sourceFilter == "uploaded") Button(onClick = { sourceFilter = "uploaded" }, modifier = Modifier.weight(1f)) { Text("Uploaded") }
+                    else OutlinedButton(onClick = { sourceFilter = "uploaded" }, modifier = Modifier.weight(1f)) { Text("Uploaded") }
+                    if (sourceFilter == "generated") Button(onClick = { sourceFilter = "generated" }, modifier = Modifier.weight(1f)) { Text("Generated") }
+                    else OutlinedButton(onClick = { sourceFilter = "generated" }, modifier = Modifier.weight(1f)) { Text("Generated") }
+                }
+                Text(
+                    state.audioLibraryPlaying?.let { "Playing: $it" } ?: "No audio playing",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                if (state.audioLibraryPlaying != null) {
+                    OutlinedButton(onClick = viewModel::stopAudio, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Stop playback") }
                 }
             }
-            if (state.audioLibraryItems.isEmpty()) item {
-                Text("No uploaded audio yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val visibleAudio = state.audioLibraryItems.filter { item ->
+                val source = listOf(item.optString("source"), item.optString("source_type"), item.optString("kind")).joinToString(" ").lowercase()
+                when (sourceFilter) {
+                    "uploaded" -> source.isBlank() || source.contains("upload") || source.contains("file")
+                    "generated" -> source.contains("generated") || source.contains("tts")
+                    else -> true
+                }
             }
-            items(state.audioLibraryItems, key = { it.optString("name") }) { item ->
+            if (visibleAudio.isEmpty()) item {
+                Text("No audio files in this view.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(visibleAudio, key = { it.optString("name") }) { item ->
                 val name = item.optString("name")
                 val playing = state.audioLibraryPlaying == name || item.optBoolean("playing")
                 Card(
@@ -76,7 +96,7 @@ internal fun AudioLibraryScreen(viewModel: AppViewModel, activity: MainActivity)
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Row(Modifier.fillMaxWidth().padding(top = 9.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(onClick = { viewModel.playAudio(name) }, modifier = Modifier.weight(1f)) { Text(if (playing) "Restart" else "Play") }
+                            Button(onClick = { viewModel.playAudio(name) }, modifier = Modifier.weight(1f)) { Text(if (playing) "Replay" else "Play") }
                             OutlinedButton(onClick = { renameTarget = item }, modifier = Modifier.weight(1f)) { Text("Rename") }
                             OutlinedButton(onClick = { viewModel.deleteAudio(name) }, modifier = Modifier.weight(1f)) { Text("Delete") }
                         }

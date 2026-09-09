@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -37,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
@@ -46,6 +48,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Devices
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -79,20 +87,20 @@ fun VerbaNodeApp(viewModel: AppViewModel, activity: MainActivity) {
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .safeDrawingPadding()
     ) {
         when (state.screen) {
             AppScreen.SERVERS -> ServerScreen(viewModel, activity)
             AppScreen.TRUST -> TrustScreen(viewModel)
-            AppScreen.LOGIN -> LoginScreen(viewModel)
+            AppScreen.LOGIN -> LoginScreen(viewModel, activity)
             AppScreen.HOME -> DashboardScreen(viewModel)
-            AppScreen.CHAT -> ChatScreen(viewModel, activity)
+            AppScreen.CHAT -> ChatScreen(viewModel)
             AppScreen.AGENTS -> AgentsScreen(viewModel, activity)
             AppScreen.MORE -> MoreScreen(viewModel)
             AppScreen.KNOWLEDGE -> KnowledgeScreen(viewModel, activity)
             AppScreen.SCRIPTS -> ScriptsScreen(viewModel)
             AppScreen.AUDIO -> AudioLibraryScreen(viewModel, activity)
             AppScreen.TYPE_TO_TALK -> TypeToTalkScreen(viewModel)
+            AppScreen.PUSH_TO_TALK -> PushToTalkScreen(viewModel, activity)
             AppScreen.PLUGINS -> PluginsScreen(viewModel)
             AppScreen.SETTINGS -> SettingsScreen(viewModel)
             AppScreen.DEVICES -> DevicesScreen(viewModel)
@@ -138,24 +146,29 @@ internal fun Feedback(viewModel: AppViewModel) {
 
 @Composable
 private fun BrandHeader(subtitle: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(22.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                painter = painterResource(R.drawable.verbanode_logo),
-                contentDescription = "VerbaNode",
-                modifier = Modifier.size(58.dp),
-                contentScale = ContentScale.Fit,
+        Image(
+            painter = painterResource(R.drawable.verbanode_logo),
+            contentDescription = "VerbaNode",
+            modifier = Modifier.size(52.dp),
+            contentScale = ContentScale.Fit,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("VerbaNode", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surface) {
+            Text(
+                "v${BuildConfig.VERSION_NAME}",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("VerbaNode", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Pill("LAN ONLY")
         }
     }
 }
@@ -177,223 +190,465 @@ internal fun Pill(text: String) {
 private fun ServerScreen(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
     var address by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf(ConnectionEntryMode.SAVED) }
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { BrandHeader("Android management console · v${BuildConfig.VERSION_NAME}") }
         item { Feedback(viewModel) }
         item {
-            DashboardCard(
-                title = "Connect to VerbaNode",
-                subtitle = "Scan this Wi-Fi with saved-server, mDNS, broadcast, and HTTPS fallback discovery, or connect manually.",
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Button(
-                    onClick = activity::ensureLocalNetworkAndDiscover,
-                    enabled = !state.discoveryActive,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (state.discoveryActive) "Scanning this Wi-Fi…" else "Scan this Wi-Fi") }
-                OutlinedButton(
-                    onClick = { scanVerbaNodeQr(activity, activity::pairFromQrWithPermission, viewModel::reportError) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                ) { Text("Scan pairing QR") }
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Pill(if (state.discoveryActive) "SCANNING" else "READY")
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (state.discoveryActive) state.discoveryStage.label
-                        else "Verified results stay available until you scan again.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
+                Icon(
+                    Icons.Outlined.Wifi,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp),
+                )
+                Text(
+                    "Connect to VerbaNode",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                Text(
+                    "Find and connect to your server",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        item { ConnectionModeTabs(selected = mode, onSelected = { mode = it }) }
+
+        when (mode) {
+            ConnectionEntryMode.SAVED -> {
+                if (state.profiles.isEmpty()) {
+                    item {
+                        MockInfoPanel(
+                            title = "No saved servers yet",
+                            text = "Scan this Wi-Fi to find VerbaNode. Trusted servers will appear here after pairing.",
+                        )
+                    }
+                } else {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(16.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Column {
+                                state.profiles.forEachIndexed { index, profile ->
+                                    SavedServerRow(
+                                        profile = profile,
+                                        emphasized = index == 0,
+                                        onConnect = { viewModel.connectProfile(profile) },
+                                        onRemove = { viewModel.removeProfile(profile) },
+                                    )
+                                    if (index != state.profiles.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ConnectionEntryMode.SCAN -> {
+                item {
+                    Button(
+                        onClick = activity::ensureLocalNetworkAndDiscover,
+                        enabled = !state.discoveryActive,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (state.discoveryActive) "Scanning this Wi-Fi…" else "Scan this Wi-Fi") }
+                }
+                if (state.discoveryActive) {
+                    item {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text(state.discoveryStage.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
                 state.discoveryWarning?.takeIf { it.isNotBlank() }?.let { warning ->
-                    Text(
-                        warning,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(top = 8.dp),
+                    item { Text(warning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+                }
+                if (state.discovered.isNotEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(16.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Column {
+                                state.discovered.forEachIndexed { index, server ->
+                                    DiscoveredServerRow(
+                                        name = server.serviceName,
+                                        address = server.baseUrl,
+                                        emphasized = index == 0,
+                                        onConnect = { viewModel.selectDiscovered(server) },
+                                    )
+                                    if (index != state.discovered.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                }
+                            }
+                        }
+                    }
+                } else if (!state.discoveryActive) {
+                    item { MockInfoPanel("Ready to scan", "Search the current Wi-Fi for a reachable VerbaNode server.") }
+                }
+            }
+
+            ConnectionEntryMode.MANUAL -> {
+                item {
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text("Server address") },
+                        placeholder = { Text("e.g. 192.168.1.50") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
                     )
+                }
+                item {
+                    Button(
+                        onClick = { viewModel.probeServer(address) },
+                        enabled = address.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Connect") }
                 }
             }
         }
-        if (state.discovered.isNotEmpty()) {
-            item { SectionTitle("Found on this network") }
-            items(state.discovered, key = { it.baseUrl }) { server ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp)),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Column(Modifier.padding(15.dp)) {
-                        Text(
-                            server.serviceName,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            server.baseUrl,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                        Row(
-                            Modifier.padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
-                            Pill("VERIFIED")
-                            Pill(server.discoverySource.label.uppercase())
-                            Pill("Core ${server.version ?: "?"}")
-                        }
-                        Button(
-                            onClick = { viewModel.selectDiscovered(server) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                        ) { Text("Connect") }
+
+        item {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("mDNS + UDP discovery", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Text("HTTPS fallback if needed", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
-        if (state.profiles.isNotEmpty()) {
-            item { SectionTitle("Saved VerbaNodes") }
-            items(state.profiles, key = { it.id }) { profile -> ProfileCard(profile, viewModel) }
+    }
+}
+
+@Composable
+private fun SavedServerRow(
+    profile: ServerProfile,
+    emphasized: Boolean,
+    onConnect: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Wifi, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(21.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(profile.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(profile.baseUrl.removePrefix("https://"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        item {
-            DashboardCard(title = "Manual connection", subtitle = "Use the HTTPS host/IP and port shown by VerbaNode on Windows.") {
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = { Text("Server address") },
-                    placeholder = { Text("192.168.1.20:8002") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+        if (emphasized) {
+            Button(onClick = onConnect, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) { Text("Connect") }
+        } else {
+            OutlinedButton(onClick = onConnect, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) { Text("Connect") }
+        }
+        TextButton(onClick = onRemove, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 4.dp)) { Text("×") }
+    }
+}
+
+@Composable
+private fun DiscoveredServerRow(name: String, address: String, emphasized: Boolean, onConnect: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Wifi, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(21.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(address.removePrefix("https://"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (emphasized) Button(onClick = onConnect) { Text("Connect") }
+        else OutlinedButton(onClick = onConnect) { Text("Connect") }
+    }
+}
+
+@Composable
+private fun MockInfoPanel(title: String, text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+            Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+        }
+    }
+}
+
+@Composable
+private fun ConnectionModeTabs(selected: ConnectionEntryMode, onSelected: (ConnectionEntryMode) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        ConnectionEntryMode.entries.forEachIndexed { index, mode ->
+            val active = mode == selected
+            Column(
+                modifier = Modifier.weight(1f).clickable { onSelected(mode) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    Phase1UiSpec.connectionTabs[index],
+                    modifier = Modifier.padding(vertical = 9.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Button(
-                    onClick = { viewModel.probeServer(address) },
-                    enabled = address.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                ) { Text("Connect") }
+                HorizontalDivider(
+                    thickness = if (active) 2.dp else 1.dp,
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                )
             }
         }
-        item {
-            Text(
-                "Local network only. This app does not use cloud relay or Internet remote control.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 20.dp),
-            )
+    }
+}
+
+@Composable
+private fun ConnectionSectionHeader(title: String, subtitle: String) {
+    Column(Modifier.padding(horizontal = 2.dp, vertical = 2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+@Composable
+private fun ConnectEmptyState(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    text: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(12.dp).size(28.dp))
+            }
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+            Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            if (actionLabel != null && onAction != null) {
+                OutlinedButton(onClick = onAction, modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) { Text(actionLabel) }
+            }
         }
     }
 }
 
 @Composable
 private fun ProfileCard(profile: ServerProfile, viewModel: AppViewModel) {
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Column(Modifier.padding(15.dp)) {
-            Text(
-                profile.name,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                profile.baseUrl,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Pill(if (profile.paired) "TRUSTED" else "PIN REQUIRED")
-                Pill("CORE ${profile.lastServerVersion ?: "?"}")
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { viewModel.connectProfile(profile) }, modifier = Modifier.weight(1f)) { Text("Open") }
-                OutlinedButton(onClick = { viewModel.removeProfile(profile) }, modifier = Modifier.weight(1f)) { Text("Remove") }
-            }
-        }
-    }
+    SavedServerRow(
+        profile = profile,
+        emphasized = true,
+        onConnect = { viewModel.connectProfile(profile) },
+        onRemove = { viewModel.removeProfile(profile) },
+    )
 }
 
 @Composable
 private fun TrustScreen(viewModel: AppViewModel) {
     val state by viewModel.ui.collectAsState()
     val probe = state.trustCandidate
-    Column(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
+        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 26.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        BrandHeader("Verify local server")
-        Feedback(viewModel)
-        DashboardCard(title = "Trust this VerbaNode?", subtitle = "The certificate identity is saved locally so future HTTPS/WSS connections must match this server.") {
-            Text(probe?.clientInfo?.instanceName ?: "VerbaNode", fontWeight = FontWeight.Bold)
-            Text(probe?.baseUrl.orEmpty(), style = MaterialTheme.typography.bodySmall)
-            Text("Core ${probe?.clientInfo?.serverVersion ?: "?"} · API ${probe?.clientInfo?.apiVersion ?: "?"}", style = MaterialTheme.typography.bodySmall)
-            Text("SPKI SHA-256", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 12.dp))
-            Text(probe?.certificateSpkiSha256.orEmpty(), style = MaterialTheme.typography.bodySmall)
-            Button(onClick = viewModel::confirmTrust, enabled = probe != null, modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) { Text("Trust & continue") }
-            OutlinedButton(onClick = viewModel::goServers, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Cancel") }
+        item { Feedback(viewModel) }
+        item {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                    Icon(Icons.Outlined.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp).size(34.dp))
+                }
+                Text("Verify this VerbaNode", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                Text("Confirm the local server identity before pairing", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(probe?.clientInfo?.instanceName ?: "VerbaNode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(probe?.baseUrl.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Pill("CORE ${probe?.clientInfo?.serverVersion ?: "?"}")
+                        Pill("API ${probe?.clientInfo?.apiVersion ?: "?"}")
+                    }
+                    Text("TLS identity", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+                    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                        Text(probe?.certificateSpkiSha256.orEmpty(), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp))
+                    }
+                    Button(onClick = viewModel::confirmTrust, enabled = probe != null, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("Trust & continue") }
+                    TextButton(onClick = viewModel::goServers, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun LoginScreen(viewModel: AppViewModel) {
+private fun LoginScreen(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
-    var pin by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
+    var pairingCode by remember { mutableStateOf("") }
+    var controllerPin by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf("code") }
+    var useControllerPin by remember { mutableStateOf(false) }
     var trustDevice by remember { mutableStateOf(true) }
+
     LazyColumn(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
+        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 26.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { BrandHeader(state.currentProfile?.name ?: "Controller login") }
         item { Feedback(viewModel) }
         item {
-            DashboardCard(title = "Controller PIN", subtitle = "Authenticate to manage this VerbaNode. You can trust this phone so later logins are automatic.") {
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { pin = it.take(32) },
-                    label = { Text("PIN") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = trustDevice, onCheckedChange = { trustDevice = it })
-                    Text("Trust this phone after PIN login")
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Icon(Icons.Outlined.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp).size(34.dp))
                 }
-                Button(onClick = { viewModel.loginWithPin(pin, trustDevice) }, enabled = pin.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Login") }
+                Text("Pairing / Authentication", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                Text("Pair with your VerbaNode server", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
         }
         item {
-            DashboardCard(title = "Pair with code", subtitle = "Web dashboard → Settings → Devices → Pair new device.") {
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it.filter(Char::isDigit).take(12) },
-                    label = { Text("Pairing code") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(onClick = { viewModel.pairWithShortCode(code) }, enabled = code.length >= 6, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Pair this phone") }
+            Row(Modifier.fillMaxWidth()) {
+                Phase1UiSpec.pairingTabs.forEachIndexed { index, label ->
+                    val key = if (index == 0) "code" else "qr"
+                    val active = mode == key
+                    Column(
+                        modifier = Modifier.weight(1f).clickable { mode = key },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            label,
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        HorizontalDivider(thickness = if (active) 2.dp else 1.dp, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
             }
         }
-        item { OutlinedButton(onClick = viewModel::goServers, modifier = Modifier.fillMaxWidth()) { Text("Back to servers") } }
+
+        if (mode == "code") {
+            item {
+                if (useControllerPin) {
+                    OutlinedTextField(
+                        value = controllerPin,
+                        onValueChange = { controllerPin = it.take(32) },
+                        label = { Text("Controller PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = pairingCode,
+                        onValueChange = { pairingCode = it.filter(Char::isDigit).take(12) },
+                        label = { Text("Enter pairing code") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                }
+            }
+            if (useControllerPin) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = trustDevice, onCheckedChange = { trustDevice = it })
+                        Text("Trust this phone after PIN login", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            item {
+                Button(
+                    onClick = {
+                        if (useControllerPin) viewModel.loginWithPin(controllerPin, trustDevice)
+                        else viewModel.pairWithShortCode(pairingCode)
+                    },
+                    enabled = if (useControllerPin) controllerPin.isNotBlank() else pairingCode.length >= 6,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (useControllerPin) "Login" else "Pair") }
+            }
+            item {
+                TextButton(onClick = { useControllerPin = !useControllerPin }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (useControllerPin) "Use pairing code instead" else "Use controller PIN instead")
+                }
+            }
+        } else {
+            item {
+                OutlinedButton(
+                    onClick = { scanVerbaNodeQr(activity, activity::pairFromQrWithPermission, viewModel::reportError) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Scan QR code") }
+            }
+        }
+
+        item {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = androidx.compose.ui.graphics.Color(0xFFE8F8F1),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.tertiary) {
+                        Text("✓", color = MaterialTheme.colorScheme.onTertiary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("Trusted Connection", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                        Text(
+                            if (state.currentProfile?.paired == true) "This device is already paired and trusted with this server."
+                            else "This device will be trusted with this server after pairing.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        item { TextButton(onClick = viewModel::goServers, modifier = Modifier.fillMaxWidth()) { Text("Back to servers") } }
     }
 }
 
