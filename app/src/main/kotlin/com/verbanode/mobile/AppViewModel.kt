@@ -432,7 +432,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun sessionLost(message: String) {
         webSocket?.close()
         webSocket = null
-        _ui.update { it.copy(session = null, connected = false, connectionLabel = "Disconnected", chatStatus = "Disconnected", screen = AppScreen.LOGIN, conversationActive = false, notice = message) }
+        _ui.update { state ->
+            state.copy(
+                session = null,
+                connected = false,
+                connectionLabel = "Disconnected",
+                chatStatus = "Disconnected",
+                screen = NavigationPolicy.sessionLossDestination(state.currentProfile != null),
+                conversationActive = false,
+                notice = message,
+            )
+        }
     }
 
     fun selectAgent(agentId: Int) = runBusy {
@@ -724,9 +734,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _ui.update { it.copy(dashboardStatus = status, pipelineStatus = pipeline, capabilityStatus = capabilities) }
     }
 
-    fun openHome() = runBusy {
-        loadDashboardInternal()
-        _ui.update { it.copy(screen = AppScreen.HOME) }
+    fun openHome() {
+        _ui.update { it.copy(screen = AppScreen.HOME, error = null, notice = null) }
+        if (api != null && _ui.value.session != null && _ui.value.connected) {
+            viewModelScope.launch {
+                runCatching { loadDashboardInternal() }
+                    .onFailure { error -> _ui.update { it.copy(error = friendlyError(error)) } }
+            }
+        }
     }
 
     fun openChat() {

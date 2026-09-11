@@ -1299,6 +1299,7 @@ internal fun ManagementSubpage(viewModel: AppViewModel, title: String, content: 
                 windowInsets = WindowInsets(0, 0, 0, 0),
             )
         },
+        bottomBar = { MainBottomNavigation(viewModel, AppScreen.MORE) },
         content = content,
     )
 }

@@ -3,6 +3,7 @@ package com.verbanode.mobile.ui
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -74,6 +75,7 @@ import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
 import com.verbanode.mobile.BuildConfig
 import com.verbanode.mobile.MainActivity
+import com.verbanode.mobile.NavigationPolicy
 import com.verbanode.mobile.R
 import com.verbanode.mobile.network.ChatMessage
 import com.verbanode.mobile.pairing.scanVerbaNodeQr
@@ -83,6 +85,9 @@ import org.json.JSONObject
 @Composable
 fun VerbaNodeApp(viewModel: AppViewModel, activity: MainActivity) {
     val state by viewModel.ui.collectAsState()
+    BackHandler(enabled = NavigationPolicy.systemBackReturnsHome(state.screen)) {
+        viewModel.backHome()
+    }
     Box(
         Modifier
             .fillMaxSize()

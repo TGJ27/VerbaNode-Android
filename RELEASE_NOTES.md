@@ -116,3 +116,15 @@ Requires VerbaNode Core v0.12.6+. REST API v1, WebSocket protocol v1 and mobile 
 - Diagnostics adds a compact system overview for Android/Core version, connection, TLS identity, and contract health while retaining compatibility, trust, health, self-test, sanitized logs, and export controls.
 - Final layout consistency uses 16 dp horizontal content padding and Material touch targets.
 - Android build number is 33; versionName remains 0.5.4.
+
+## v0.5.4 navigation consistency patch (versionCode 34)
+
+- Standardized the primary bottom navigation to Home / Chat / Scripts / Audio / More across the main app shell.
+- Chat now keeps the shared bottom navigation visible; More remains selected for child management screens such as Agents and Knowledge.
+- Agents and Knowledge are surfaced from More, while Scripts and Audio remain first-class bottom-navigation destinations.
+- Home is the stable root after configuration: losing the Core/controller session returns to Home in a disconnected state instead of forcing the Login screen.
+- Home navigation no longer depends on a live API session before the screen can be shown.
+- Android system Back returns secondary main screens to Home; Back from Home retains the normal system exit/minimize behavior.
+- Added navigation-policy regression coverage for tab ordering, More-child selection, Back behavior, and session-loss routing.
+- Core/API/WebSocket/mobile contract versions are unchanged.
+- Android build number is 34; versionName remains 0.5.4.

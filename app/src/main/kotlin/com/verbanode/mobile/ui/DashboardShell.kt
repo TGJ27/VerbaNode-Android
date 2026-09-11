@@ -33,7 +33,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Description
@@ -49,7 +48,6 @@ import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Stop
@@ -95,11 +93,54 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.verbanode.mobile.AppScreen
 import com.verbanode.mobile.AppViewModel
+import com.verbanode.mobile.NavigationPolicy
 import com.verbanode.mobile.R
 import com.verbanode.mobile.network.ChatMessage
 
 private val Success = Color(0xFF20B979)
 private val SoftBlue = Color(0xFFF6F9FF)
+
+@Composable
+internal fun MainBottomNavigation(viewModel: AppViewModel, currentScreen: AppScreen) {
+    val selected = NavigationPolicy.bottomSelectionFor(currentScreen)
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+        NavigationBarItem(
+            selected = selected == AppScreen.HOME,
+            onClick = viewModel::openHome,
+            icon = { Icon(Icons.Outlined.Home, null) },
+            label = { Text("Home") },
+            alwaysShowLabel = true,
+        )
+        NavigationBarItem(
+            selected = selected == AppScreen.CHAT,
+            onClick = viewModel::openChat,
+            icon = { Icon(Icons.AutoMirrored.Outlined.Chat, null) },
+            label = { Text("Chat") },
+            alwaysShowLabel = true,
+        )
+        NavigationBarItem(
+            selected = selected == AppScreen.SCRIPTS,
+            onClick = viewModel::openScripts,
+            icon = { Icon(Icons.Outlined.Description, null) },
+            label = { Text("Scripts") },
+            alwaysShowLabel = true,
+        )
+        NavigationBarItem(
+            selected = selected == AppScreen.AUDIO,
+            onClick = viewModel::openAudio,
+            icon = { Icon(Icons.Outlined.GraphicEq, null) },
+            label = { Text("Audio") },
+            alwaysShowLabel = true,
+        )
+        NavigationBarItem(
+            selected = selected == AppScreen.MORE,
+            onClick = { viewModel.navigate(AppScreen.MORE) },
+            icon = { Icon(Icons.Outlined.MoreHoriz, null) },
+            label = { Text("More") },
+            alwaysShowLabel = true,
+        )
+    }
+}
 
 @Composable
 internal fun ManagementScaffold(
@@ -108,7 +149,6 @@ internal fun ManagementScaffold(
     selected: AppScreen,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    val state by viewModel.ui.collectAsState()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -152,24 +192,7 @@ internal fun ManagementScaffold(
                 }
             }
         },
-        bottomBar = {
-            if (selected == AppScreen.HOME) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    NavigationBarItem(true, viewModel::openHome, { Icon(Icons.Outlined.Home, null) }, label = { Text("Home") })
-                    NavigationBarItem(false, viewModel::openAgents, { Icon(Icons.Outlined.Person, null) }, label = { Text("Agents") })
-                    NavigationBarItem(false, viewModel::openChat, { Icon(Icons.AutoMirrored.Outlined.Chat, null) }, label = { Text("Chat") })
-                    NavigationBarItem(false, { viewModel.navigate(AppScreen.MORE) }, { Icon(Icons.Outlined.MoreHoriz, null) }, label = { Text("More") })
-                }
-            } else {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    NavigationBarItem(selected == AppScreen.HOME, viewModel::openHome, { Icon(Icons.Outlined.Home, null) }, label = { Text("Home") })
-                    NavigationBarItem(selected == AppScreen.CHAT, viewModel::openChat, { Icon(Icons.AutoMirrored.Outlined.Chat, null) }, label = { Text("Chat") })
-                    NavigationBarItem(selected == AppScreen.AGENTS, viewModel::openAgents, { Icon(Icons.Outlined.Person, null) }, label = { Text("Agents") })
-                    NavigationBarItem(selected == AppScreen.KNOWLEDGE, viewModel::openKnowledge, { Icon(Icons.Outlined.Storage, null) }, label = { Text("Knowledge") })
-                    NavigationBarItem(selected == AppScreen.MORE, { viewModel.navigate(AppScreen.MORE) }, { Icon(Icons.Outlined.MoreHoriz, null) }, label = { Text("More") })
-                }
-            }
-        },
+        bottomBar = { MainBottomNavigation(viewModel, selected) },
         content = content,
     )
 }
@@ -393,7 +416,7 @@ internal fun ChatScreen(viewModel: AppViewModel) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = viewModel::openHome) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+                    Spacer(Modifier.size(48.dp))
                     Text("Chat", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Box {
                         IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Outlined.MoreVert, "Chat options") }
@@ -408,6 +431,7 @@ internal fun ChatScreen(viewModel: AppViewModel) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         },
+        bottomBar = { MainBottomNavigation(viewModel, AppScreen.CHAT) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
             Feedback(viewModel)
@@ -584,12 +608,11 @@ internal fun MoreScreen(viewModel: AppViewModel) {
     ManagementScaffold(viewModel, "More / Management", AppScreen.MORE) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { Feedback(viewModel) }
+            item { MoreRow(Feature(Icons.Outlined.Person, "Agents", "Manage AI agents", viewModel::openAgents), Feature(Icons.Outlined.Info, "Knowledge", "Hybrid RAG libraries", viewModel::openKnowledge)) }
             item { MoreRow(Feature(Icons.Outlined.Extension, "Plugins", "Extend capabilities", viewModel::openPlugins), Feature(Icons.Outlined.Devices, "Devices", "Trusted controllers", viewModel::openDevices)) }
             item { MoreRow(Feature(Icons.Outlined.MonitorHeart, "Diagnostics", "System health", viewModel::openDiagnostics), Feature(Icons.Outlined.CloudUpload, "Backup & Restore", "Protect your data", viewModel::openData)) }
             item { MoreRow(Feature(Icons.Outlined.Mic, "Type to Talk", "Queue direct TTS speech", viewModel::openTypeToTalk), Feature(Icons.Outlined.Settings, "Settings", "Conversation & runtime", viewModel::openSettings)) }
-            item { MoreRow(Feature(Icons.Outlined.GraphicEq, "Audio", "Multi-format audio library", viewModel::openAudio), Feature(Icons.Outlined.Security, "Security", "Trusted devices", viewModel::openDevices)) }
-            item { MoreRow(Feature(Icons.Outlined.Person, "Agents", "Manage AI agents", viewModel::openAgents), Feature(Icons.Outlined.Info, "Knowledge", "Hybrid RAG libraries", viewModel::openKnowledge)) }
-            item { MoreRow(Feature(Icons.Outlined.Description, "Scripts & Queue", "TTS scripts", viewModel::openScripts), Feature(Icons.Outlined.Storage, "About / Status", "Core and protocol info", viewModel::openStatus)) }
+            item { FeatureCard(Feature(Icons.Outlined.Storage, "About / Status", "Core and protocol info", viewModel::openStatus), Modifier.fillMaxWidth()) }
             item { FeatureCard(Feature(Icons.AutoMirrored.Outlined.Logout, "Switch Server", "Return to connections", viewModel::goServers), Modifier.fillMaxWidth()) }
             item { OutlinedButton(onClick = viewModel::logout, modifier = Modifier.fillMaxWidth()) { Text("Logout controller session") } }
         }
